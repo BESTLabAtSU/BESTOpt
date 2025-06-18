@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from typing import Optional
 import numpy as np
 import pandas as pd
-import pickle
-import os
 import gurobipy as gp
 from gurobipy import GRB
 
@@ -139,18 +137,18 @@ class Optimizer:
     def run(self):
         return self._run_operation()
 
-    def _run_operation(self): # can't deal with non-existing component
+    def _run_operation(self):
         N = len(self.load)
         P_pv = self.building.pv.pv_gen if self.building.pv else np.zeros_like(self.load)
         operation_results = []
-        SoC_bat_0 = self.building.battery.initial_soc if self.battery_size > 0 else 0
-        SoC_ev_0 = self.building.ev.arrival_soc if self.ev_size > 0 else 0
-        one_day_step_size = int(1440/self.globals.Res)
+        SoC_bat_0 = self.building.battery.initial_soc if self.building.battery else 0
+        SoC_ev_0 = self.building.ev.arrival_soc if self.building.ev else 0
+        one_day_step_size = int(1440 / self.globals.Res)
 
-        for i in range(0, N, one_day_step_size): #Each optimization is based on one day horizon
+        for i in range(0, N, one_day_step_size):  # Each optimization is based on one day horizon
             end_idx = min(i + one_day_step_size, N)
             window_steps = end_idx - i
-            A = np.tril(np.ones((window_steps, window_steps))) #State matrix
+            A = np.tril(np.ones((window_steps, window_steps)))  # State matrix
 
             m = gp.Model("Operation")
             m.setParam('OutputFlag', 0)
@@ -181,33 +179,56 @@ class Optimizer:
             SoC_ev = m.addMVar((window_steps, 1), lb=0, name="SoC_EV") if self.ev_size > 0 else None
 
             total_load = self.load[i:end_idx].reshape(-1, 1)
+
+            # Building load balance constraint
             m.addConstr(PV_blgd + Grid_blgd + Bat_blgd + EV_blgd == total_load, name="Bldg_Load_Balance")
-            m.addConstr(PV_blgd + PV_curtail + PV_bat + PV_ev == P_pv[i:end_idx], name="PV_Gen_Balance")
+
+            # PV generation balance constraint
+            if self.pv_size > 0:
+                m.addConstr(PV_blgd + PV_curtail + PV_bat + PV_ev == P_pv[i:end_idx].reshape(-1, 1),
+                            name="PV_Gen_Balance")
+            else:
+                # If no PV, all PV-related variables should be zero
+                m.addConstr(PV_blgd == 0, name="No_PV_to_Bldg")
+                m.addConstr(PV_curtail == 0, name="No_PV_Curtail")
+                m.addConstr(PV_bat == 0, name="No_PV_to_Bat")
+                m.addConstr(PV_ev == 0, name="No_PV_to_EV")
+
+            # Grid purchase balance constraint
             m.addConstr(Grid_blgd + Grid_bat + Grid_ev == Grid_purchase, name="Grid_Purchase_Balance")
 
+            # Battery constraints
             if self.battery_size > 0:
                 bat = self.building.battery
                 bat_max_chg = bat.c_rate * self.battery_size
                 bat_max_dch = bat.c_rate * self.battery_size
                 m.addConstr(
                     SoC_bat_0 * np.ones((window_steps, 1)) +
-                    A @ (Grid_bat + PV_bat + Ev_Bat) * bat.charge_efficiency / self.battery_size -
-                    A @ (Bat_blgd + Bat_ev) / (self.battery_size * bat.discharge_efficiency) == SoC_bat,
+                    A @ (Grid_bat + PV_bat + Ev_Bat) * (self.globals.Res/60) *bat.charge_efficiency / self.battery_size -
+                    A @ (Bat_blgd + Bat_ev) * (self.globals.Res/60) / (self.battery_size * bat.discharge_efficiency) == SoC_bat,
                     name="Battery_Balance"
                 )
                 m.addConstr(SoC_bat >= bat.min_soc, name="Bat_SoCmin")
                 m.addConstr(SoC_bat <= bat.max_soc, name="Bat_SoCmax")
                 m.addConstr(Grid_bat + PV_bat + Ev_Bat <= bat_max_chg, name="Bat_ChargeLimit")
                 m.addConstr(Bat_blgd + Bat_ev <= bat_max_dch, name="Bat_DisChargeLimit")
+            else:
+                # If no battery, all battery-related variables should be zero
+                m.addConstr(Bat_blgd == 0, name="No_Bat_to_Bldg")
+                m.addConstr(Grid_bat == 0, name="No_Grid_to_Bat")
+                m.addConstr(PV_bat == 0, name="No_PV_to_Bat_constraint")
+                m.addConstr(Bat_ev == 0, name="No_Bat_to_EV")
+                m.addConstr(Ev_Bat == 0, name="No_EV_to_Bat")
 
+            # EV constraints
             if self.ev_size > 0:
                 ev = self.building.ev
                 ev_max_chg = ev.c_rate * self.ev_size
                 ev_max_dch = ev.c_rate * self.ev_size
                 m.addConstr(
                     SoC_ev_0 * np.ones((window_steps, 1)) +
-                    A @ (Grid_ev + PV_ev + Bat_ev) * ev.charge_efficiency / self.ev_size -
-                    A @ (EV_blgd + Ev_Bat) / (self.ev_size * ev.discharge_efficiency) == SoC_ev,
+                    A @ (Grid_ev + PV_ev + Bat_ev) * (self.globals.Res/60) * ev.charge_efficiency / self.ev_size -
+                    A @ (EV_blgd + Ev_Bat) * (self.globals.Res/60) / (self.ev_size * ev.discharge_efficiency) == SoC_ev,
                     name="EV_Balance"
                 )
                 m.addConstr(SoC_ev >= ev.min_soc, name="EV_SoCmin")
@@ -215,255 +236,55 @@ class Optimizer:
                 m.addConstr(Grid_ev + PV_ev + Bat_ev <= ev_max_chg, name="EV_ChargeLimit")
                 m.addConstr(EV_blgd + Ev_Bat <= ev_max_dch, name="EV_DisChargeLimit")
 
+                # EV availability constraints
                 for t in range(window_steps):
                     if t == ev.departure_time - 1:
                         m.addConstr(SoC_ev[t, 0] >= ev.required_departure_soc, name=f"EV_Required_SOC_at_departure")
                     if t < ev.arrival_time or t >= ev.departure_time:
                         m.addConstr(EV_blgd[t, 0] + Ev_Bat[t, 0] == 0.0, name=f"EV_inactive_discharging_{t}")
-                        m.addConstr(Grid_ev[t, 0] + PV_ev[t, 0] + Bat_ev[t, 0] == 0.0, name=f"EV_inactive_charging_{t}")
+                        m.addConstr(Grid_ev[t, 0] + PV_ev[t, 0] + Bat_ev[t, 0] == 0.0,
+                                    name=f"EV_inactive_charging_{t}")
+            else:
+                # If no EV, all EV-related variables should be zero
+                m.addConstr(EV_blgd == 0, name="No_EV_to_Bldg")
+                m.addConstr(Grid_ev == 0, name="No_Grid_to_EV")
+                m.addConstr(PV_ev == 0, name="No_PV_to_EV_constraint")
+                m.addConstr(Bat_ev == 0, name="No_Bat_to_EV_constraint")
+                m.addConstr(Ev_Bat == 0, name="No_EV_to_Bat_constraint")
 
             tou = self.tou[i:end_idx].reshape(-1, 1)
             m.setObjective(tou.T @ Grid_purchase, GRB.MINIMIZE)
             m.optimize()
 
-            result = pd.DataFrame({
-                'PV2Blgd': PV_blgd.X.reshape(-1,),
-                'G2Blgd': Grid_blgd.X.reshape(-1,),
-                'Bat2Blgd': Bat_blgd.X.reshape(-1,),
-                'EV2Blgd': EV_blgd.X.reshape(-1,),
-                'GridPurchase': Grid_purchase.X.reshape(-1,),
-            }, index=np.arange(i, end_idx))
-
-            operation_results.append(result)
-
-        self.operation_result = pd.concat(operation_results)
-        return self.operation_result #cant
-    #TODO
-    def _run_operation_ongoing(self):
-        N = len(self.load)
-        P_pv = self.building.pv.pv_gen if self.building.pv else np.zeros_like(self.load)
-        operation_results = []
-
-        # Initialize SOC values only if components exist
-        SoC_bat_0 = self.building.battery.initial_soc if self.battery_size > 0 else 0
-        SoC_ev_0 = self.building.ev.arrival_soc if self.ev_size > 0 else 0
-        one_day_step_size = int(1440 / self.globals.Res)
-
-        for i in range(0, N, one_day_step_size):
-            end_idx = min(i + one_day_step_size, N)
-            window_steps = end_idx - i
-            A = np.tril(np.ones((window_steps, window_steps)))
-
-            m = gp.Model("Operation")
-            m.setParam('OutputFlag', 0)
-            m.setParam('Threads', self.globals.cpus)
-
-            # Always needed variables
-            Grid_blgd = m.addMVar((window_steps, 1), lb=0, name="G2Blgd")
-            Grid_purchase = m.addMVar((window_steps, 1), lb=0, name="GridPurchase")
-
-            # Grid components list for balance constraint
-            grid_components = [Grid_blgd]
-
-            # Building load components list for balance constraint
-            building_load_components = [Grid_blgd]
-
-            # PV-related variables (only if PV exists)
-            if self.building.pv:
-                PV_blgd = m.addMVar((window_steps, 1), lb=0, name="PV2Blgd")
-                PV_curtail = m.addMVar((window_steps, 1), lb=0, name="PVcurt")
-                building_load_components.append(PV_blgd)
-
-                # PV generation components for balance
-                pv_gen_components = [PV_blgd, PV_curtail]
-
-                if self.battery_size > 0:
-                    PV_bat = m.addMVar((window_steps, 1), lb=0, name="PV2Bat")
-                    pv_gen_components.append(PV_bat)
-                else:
-                    PV_bat = None
-
-                if self.ev_size > 0:
-                    PV_ev = m.addMVar((window_steps, 1), lb=0, name="PV2EV")
-                    pv_gen_components.append(PV_ev)
-                else:
-                    PV_ev = None
-            else:
-                PV_blgd = PV_curtail = PV_bat = PV_ev = None
-                pv_gen_components = []
-
-            # Battery-related variables (only if battery exists)
-            if self.battery_size > 0:
-                Bat_blgd = m.addMVar((window_steps, 1), lb=0, name="Bat2Blgd")
-                Grid_bat = m.addMVar((window_steps, 1), lb=0, name="G2Bat")
-                SoC_bat = m.addMVar((window_steps, 1), lb=0, name="SoC_Bat")
-
-                building_load_components.append(Bat_blgd)
-                grid_components.append(Grid_bat)
-
-                if self.ev_size > 0:
-                    Bat_ev = m.addMVar((window_steps, 1), lb=0, name="Bat2EV")
-                    Ev_Bat = m.addMVar((window_steps, 1), lb=0, name="EV2Bat")
-                else:
-                    Bat_ev = Ev_Bat = None
-            else:
-                Bat_blgd = Grid_bat = SoC_bat = Bat_ev = Ev_Bat = None
-
-            # EV-related variables (only if EV exists)
-            if self.ev_size > 0:
-                EV_blgd = m.addMVar((window_steps, 1), lb=0, name="EV2Blgd")
-                Grid_ev = m.addMVar((window_steps, 1), lb=0, name="G2EV")
-                SoC_ev = m.addMVar((window_steps, 1), lb=0, name="SoC_EV")
-
-                building_load_components.append(EV_blgd)
-                grid_components.append(Grid_ev)
-            else:
-                EV_blgd = Grid_ev = SoC_ev = None
-
-            # Balance constraints
-            total_load = self.load[i:end_idx].reshape(-1, 1)
-
-            # Building load balance (sum all available components)
-            building_load_sum = sum(building_load_components)
-            m.addConstr(building_load_sum == total_load, name="Bldg_Load_Balance")
-
-            # PV generation balance (only if PV exists)
-            if self.building.pv and pv_gen_components:
-                pv_gen_sum = sum(pv_gen_components)
-                m.addConstr(pv_gen_sum == P_pv[i:end_idx].reshape(-1, 1), name="PV_Gen_Balance")
-
-            # Grid purchase balance
-            grid_sum = sum(grid_components)
-            m.addConstr(grid_sum == Grid_purchase, name="Grid_Purchase_Balance")
-
-            # Battery constraints (only if battery exists)
-            if self.battery_size > 0:
-                bat = self.building.battery
-                bat_max_chg = bat.c_rate * self.battery_size
-                bat_max_dch = bat.c_rate * self.battery_size
-
-                # Battery charging components
-                bat_charge_components = [Grid_bat]
-                if PV_bat is not None:
-                    bat_charge_components.append(PV_bat)
-                if Ev_Bat is not None:
-                    bat_charge_components.append(Ev_Bat)
-
-                # Battery discharging components
-                bat_discharge_components = [Bat_blgd]
-                if Bat_ev is not None:
-                    bat_discharge_components.append(Bat_ev)
-
-                # Battery SOC balance
-                bat_charge_sum = sum(bat_charge_components)
-                bat_discharge_sum = sum(bat_discharge_components)
-
-                m.addConstr(
-                    SoC_bat_0 * np.ones((window_steps, 1)) +
-                    A @ bat_charge_sum * bat.charge_efficiency / self.battery_size -
-                    A @ bat_discharge_sum / (self.battery_size * bat.discharge_efficiency) == SoC_bat,
-                    name="Battery_Balance"
-                )
-
-                # Battery SOC limits
-                m.addConstr(SoC_bat >= bat.min_soc, name="Bat_SoCmin")
-                m.addConstr(SoC_bat <= bat.max_soc, name="Bat_SoCmax")
-
-                # Battery power limits
-                m.addConstr(bat_charge_sum <= bat_max_chg, name="Bat_ChargeLimit")
-                m.addConstr(bat_discharge_sum <= bat_max_dch, name="Bat_DisChargeLimit")
-
-            # EV constraints (only if EV exists)
-            if self.ev_size > 0:
-                ev = self.building.ev
-                ev_max_chg = ev.c_rate * self.ev_size
-                ev_max_dch = ev.c_rate * self.ev_size
-
-                # EV charging components
-                ev_charge_components = [Grid_ev]
-                if PV_ev is not None:
-                    ev_charge_components.append(PV_ev)
-                if Bat_ev is not None:
-                    ev_charge_components.append(Bat_ev)
-
-                # EV discharging components
-                ev_discharge_components = [EV_blgd]
-                if Ev_Bat is not None:
-                    ev_discharge_components.append(Ev_Bat)
-
-                # EV SOC balance
-                ev_charge_sum = sum(ev_charge_components)
-                ev_discharge_sum = sum(ev_discharge_components)
-
-                m.addConstr(
-                    SoC_ev_0 * np.ones((window_steps, 1)) +
-                    A @ ev_charge_sum * ev.charge_efficiency / self.ev_size -
-                    A @ ev_discharge_sum / (self.ev_size * ev.discharge_efficiency) == SoC_ev,
-                    name="EV_Balance"
-                )
-
-                # EV SOC limits
-                m.addConstr(SoC_ev >= ev.min_soc, name="EV_SoCmin")
-                m.addConstr(SoC_ev <= ev.max_soc, name="EV_SoCmax")
-
-                # EV power limits
-                m.addConstr(ev_charge_sum <= ev_max_chg, name="EV_ChargeLimit")
-                m.addConstr(ev_discharge_sum <= ev_max_dch, name="EV_DisChargeLimit")
-
-                # EV availability constraints
-                for t in range(window_steps):
-                    # Check if we're at departure time (require minimum SOC)
-                    if hasattr(ev, 'departure_time') and t == ev.departure_time - 1:
-                        m.addConstr(SoC_ev[t, 0] >= ev.required_departure_soc,
-                                    name=f"EV_Required_SOC_at_departure")
-
-                    # EV not available (cannot charge or discharge)
-                    if (hasattr(ev, 'arrival_time') and hasattr(ev, 'departure_time') and
-                            (t < ev.arrival_time or t >= ev.departure_time)):
-                        # No discharging when EV not present
-                        for component in ev_discharge_components:
-                            m.addConstr(component[t, 0] == 0.0,
-                                        name=f"EV_inactive_discharging_{t}_{component.VarName}")
-                        # No charging when EV not present
-                        for component in ev_charge_components:
-                            m.addConstr(component[t, 0] == 0.0,
-                                        name=f"EV_inactive_charging_{t}_{component.VarName}")
-
-            # Objective function
-            tou = self.tou[i:end_idx].reshape(-1, 1)
-            m.setObjective(tou.T @ Grid_purchase, GRB.MINIMIZE)
-            m.optimize()
-
-            # Collect results (handle missing variables)
-            result_dict = {
-                'GridPurchase': Grid_purchase.X.reshape(-1, ),
+            # Collect results
+            result_data = {
+                'PV2Blgd': PV_blgd.X.reshape(-1, ),
                 'G2Blgd': Grid_blgd.X.reshape(-1, ),
+                'Bat2Blgd': Bat_blgd.X.reshape(-1, ),
+                'EV2Blgd': EV_blgd.X.reshape(-1, ),
+                'GridPurchase': Grid_purchase.X.reshape(-1, ),
+                'PVcurt': PV_curtail.X.reshape(-1, ),
+                'PV2Bat': PV_bat.X.reshape(-1, ),
+                'PV2EV': PV_ev.X.reshape(-1, ),
+                'G2Bat': Grid_bat.X.reshape(-1, ),
+                'G2EV': Grid_ev.X.reshape(-1, ),
+                'Bat2EV': Bat_ev.X.reshape(-1, ),
+                'EV2Bat': Ev_Bat.X.reshape(-1, ),
             }
 
-            # Add results for components that exist
-            if PV_blgd is not None:
-                result_dict['PV2Blgd'] = PV_blgd.X.reshape(-1, )
+            # SOC variables need special handling since they might be None
+            if SoC_bat is not None:
+                result_data['SoC_Bat'] = SoC_bat.X.reshape(-1, )
             else:
-                result_dict['PV2Blgd'] = np.zeros(window_steps)
+                result_data['SoC_Bat'] = np.zeros(window_steps)
 
-            if Bat_blgd is not None:
-                result_dict['Bat2Blgd'] = Bat_blgd.X.reshape(-1, )
+            if SoC_ev is not None:
+                result_data['SoC_EV'] = SoC_ev.X.reshape(-1, )
             else:
-                result_dict['Bat2Blgd'] = np.zeros(window_steps)
+                result_data['SoC_EV'] = np.zeros(window_steps)
 
-            if EV_blgd is not None:
-                result_dict['EV2Blgd'] = EV_blgd.X.reshape(-1, )
-            else:
-                result_dict['EV2Blgd'] = np.zeros(window_steps)
-
-            result = pd.DataFrame(result_dict, index=np.arange(i, end_idx))
+            result = pd.DataFrame(result_data, index=np.arange(i, end_idx))
             operation_results.append(result)
-
-            # Update initial SOC for next day
-            if self.battery_size > 0:
-                SoC_bat_0 = SoC_bat.X[-1, 0]  # Last SOC becomes initial for next day
-            if self.ev_size > 0:
-                SoC_ev_0 = SoC_ev.X[-1, 0]  # Last SOC becomes initial for next day
 
         self.operation_result = pd.concat(operation_results)
         return self.operation_result
