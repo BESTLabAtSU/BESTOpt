@@ -13,12 +13,7 @@ and state history recording.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 import logging
-
-# Shared data structures that define common inputs/outputs between modules
-from .data_structures import (
-    BuildingState, ControlAction, WeatherData,
-    PriceSignal, SimulationConfig
-)
+from .data_structure import (State, Action, Disturbance, SimulationConfig)
 
 
 class BaseModule(ABC):
