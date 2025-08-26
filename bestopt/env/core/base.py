@@ -1,5 +1,5 @@
 """
-This code defines the BaseClass for bestopt dynamic modules to inherit from,
+This module defines the BaseClass for bestopt dynamic modules to inherit from,
 In order to ensure a consistent format.
 
   - initialize(): prepare configuration / parameters
