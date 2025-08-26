@@ -1,11 +1,11 @@
 """
-Base classes for bestopt modules.
-This code defines the abstract interface (BaseModule) that all simulation
-modules (building, HVAC, DERs[PV, battery, EV...], occupancy, disturbances, etc.) will
-inherit from. It ensures a consistent lifecycle:
+This code defines the BaseClass for bestopt dynamic modules to inherit from,
+In order to ensure a consistent format.
+
   - initialize(): prepare configuration / parameters
   - step(): run one simulation timestep
   - reset(): return to initial conditions
+
 It also provides optional utilities for later use such as input validation, state save/load,
 and state history recording.
 """
@@ -22,9 +22,9 @@ from .data_structures import (
 
 
 class BaseModule(ABC):
-    """Abstract base class for all simulation modules.
+    """Abstract base class for all dynamic modules.
 
-    Every module (e.g., HVAC, envelope, DER, occupancy) should inherit from 
+    Every dynamic module (e.g., Building, HVAC, DERs...) should inherit from
     this class and implement initialize(), step(), and reset() methods.
     """
 
@@ -32,13 +32,13 @@ class BaseModule(ABC):
         """Initialize base module.
 
         Args:
-            config: Module configuration dictionary (user- or experiment-defined)
+            config: Module configuration dictionary
             name: Module name, also used for namespacing the logger.
         """
         self.config = config
         self.name = name
 
-        # Module-level logger, e.g. "piml_building_env.core.base.HVACModule"
+        # Module-level logger
         self.logger = logging.getLogger(f"{__name__}.{name}")
 
         # Tracks if the module has been initialized before stepping
@@ -60,15 +60,15 @@ class BaseModule(ABC):
         pass
 
     @abstractmethod
-    def step(self, state: BuildingState, action: ControlAction,
-             weather: WeatherData, timestep: float) -> Dict[str, Any]:
+    def step(self, state: State, action: Action,
+             disturbance: Disturbance, timestep: float) -> Dict[str, Any]:
         """Execute one simulation timestep.
 
         Args:
-            state: Current building state (temperature, SOC, etc.)
-            action: Control action to apply (HVAC setpoint, battery charge, etc.)
-            weather: Weather conditions at current step
-            timestep: Simulation timestep in seconds
+            state: Current state of dynamic module (temperature, SOC, etc.)
+            action: Control action to apply (charge/discharge power, cooling/heating etc.)
+            disturbance: Disturbance at current step (weather, utility price, etc.)
+            timestep: Simulation timestep (default: 15 minutes)
 
         Returns:
             Dictionary containing module outputs (e.g., updated state variables,
@@ -81,7 +81,7 @@ class BaseModule(ABC):
         """Reset module to its initial state.
 
         Ensures reproducibility between episodes or experiments.
-        Example: set SOC = 100%, clear queues, reinitialize states.
+        Example: set SOC = 100%.
         """
         pass
 
@@ -103,7 +103,7 @@ class BaseModule(ABC):
         """Get current module state as dictionary.
 
         Example keys: {"indoor_temp": 22.5, "SOC": 0.8}
-        Used for serialization, saving, and debugging.
+        Used for evaluation, saving, and debugging.
         """
         return {}
 
@@ -116,7 +116,7 @@ class BaseModule(ABC):
         """
         pass
 
-    # ------------------- STATE SERIALIZATION -------------------
+    # ------------------- STATE RECORDING -------------------
 
     def save_state(self, filepath: str) -> None:
         """Save module state to file using pickle."""
