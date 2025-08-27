@@ -62,6 +62,11 @@ HOURS_PER_DAY: Final[float] = 24.0
 DAYS_PER_YEAR: Final[float] = 365  # @TODO leap year
 SECONDS_PER_DAY: Final[float] = SECONDS_PER_HOUR * HOURS_PER_DAY
 
+# Simulation default
+SIMULATION_DEFAULTS: Final[Dict[str, float]] = {
+    'timestep_minutes': 15,
+}
+
 # # Grid and power quality
 # NOMINAL_VOLTAGE_RESIDENTIAL: Final[float] = 240.0  # V (US split-phase)
 # NOMINAL_FREQUENCY: Final[float] = 60.0  # Hz (US)
@@ -176,12 +181,7 @@ SECONDS_PER_DAY: Final[float] = SECONDS_PER_HOUR * HOURS_PER_DAY
 #
 #
 # # Typical simulation parameters
-# SIMULATION_DEFAULTS: Final[Dict[str, float]] = {
-#     'timestep_minutes': 15.0,
-#     'convergence_tolerance': 1e-6,
-#     'max_iterations': 100,
-#     'relaxation_factor': 0.7,
-# }
+
 #
 # # Numerical stability limits
 # NUMERICAL_LIMITS: Final[Dict[str, float]] = {

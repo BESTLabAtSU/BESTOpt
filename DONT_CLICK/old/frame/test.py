@@ -28,7 +28,7 @@ class ModuleType(Enum):
     OCCUPANCY = "occupancy"
     DISTURBANCE = "disturbance"
     HVAC = "hvac"
-    DER = "der"
+    DER = "ders"
     EQUIPMENT = "equipment"
     THERMAL_DYNAMIC = "thermal_dynamic"
     POWER_DYNAMIC = "power_dynamic"
@@ -412,7 +412,7 @@ class DERModule(PIMLModule):
         return ModuleOutput(
             timestamp=inputs.timestamp,
             values=output,
-            metadata={'module_type': 'der', 'der_type': self.der_type.value}
+            metadata={'module_type': 'ders', 'der_type': self.der_type.value}
         )
 
     def train(self, training_data: pd.DataFrame) -> None:

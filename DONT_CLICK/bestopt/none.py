@@ -16,7 +16,7 @@ building_simulation/
 │   │   ├── source.py
 │   │   ├── distribution.py
 │   │   └── terminal.py
-│   ├── der/
+│   ├── ders/
 │   │   ├── __init__.py
 │   │   ├── pv.py
 │   │   ├── battery.py
@@ -225,7 +225,7 @@ class BuildingDynamics(DynamicModule):
         }
 
 
-# runtime/der/pv.py
+# runtime/ders/pv.py
 class PVSystem(StaticModule):
     """Photovoltaic system module."""
 
@@ -252,7 +252,7 @@ class PVSystem(StaticModule):
         return {'power_output': power, 'available_power': power / (1 - curtailment)}
 
 
-# runtime/der/battery.py
+# runtime/ders/battery.py
 class Battery(DynamicModule):
     """Battery energy storage module."""
 

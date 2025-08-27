@@ -279,60 +279,67 @@ class Observation:
 
 
 @dataclass
-class SimulationConfig:
-    """Configuration parameters for the simulation."""
-    # Time parameters
-    timestep: float = 0.25  # hours (15 minutes)
+class EnvConfig:
+    timestep: float = 15.0  # 15 minutes
     simulation_days: int = 7
     start_time: float = 0.0  # hours from start of year
 
-    # Building parameters
-    building_area: float = 200.0  # m²
-    building_volume: float = 600.0  # m³
-    building_thermal_mass: float = 50000.0  # J/K
-    building_ua_value: float = 300.0  # W/K (overall heat transfer coefficient)
 
-    # HVAC parameters
-    hvac_capacity: float = 10.0  # kW
+@dataclass
+class BuildingConfig:
+    building_area: float = 200.0
+    building_volume: float = 600.0
+    building_thermal_mass: float = 50_000.0
+    building_ua_value: float = 300.0
+
+
+@dataclass
+class HVACConfig:
+    hvac_capacity: float = 10.0 # kW
     hvac_cop_cooling: float = 3.0
     hvac_cop_heating: float = 2.5
 
-    # Battery parameters
+
+@dataclass
+class BatteryConfig:
     battery_capacity: float = 20.0  # kWh
-    battery_max_power: float = 5.0  # kW
-    battery_efficiency: float = 0.95
-    battery_soc_min: float = 10.0  # %
-    battery_soc_max: float = 90.0  # %
+    battery_c_rate: float = 0.25  # 0.5C means the battery takes 2 hours to fully charge; 0.2C means 5 hours.
+    battery_charge_efficiency: float = 0.95
+    battery_discharge_efficiency: float = 0.95
+    battery_soc_min: float = 0.1
+    battery_soc_max: float = 0.9
 
-    # EV parameters
-    ev_capacity: float = 60.0  # kWh
-    ev_max_power: float = 7.0  # kW
-    ev_efficiency: float = 0.90
 
-    # PV parameters
+@dataclass
+class EVConfig:
+    ev_capacity: float = 60.0
+    ev_c_rate: float = 0.25
+    ev_charge_efficiency: float = 0.90
+    ev_discharge_efficiency: float = 0.90
+    ev_soc_min: float = 0.10
+    ev_soc_max: float = 0.90
+
+
+@dataclass
+class PVConfig:
     pv_capacity: float = 8.0  # kW
-    pv_tilt: float = 30.0  # degrees
-    pv_azimuth: float = 180.0  # degrees (south-facing)
+    pv_tilt: float = 30.0
+    pv_azimuth: float = 180.0
 
-    # Comfort parameters
-    comfort_temp_deadband: float = 2.0  # °C
-    comfort_temp_violation_penalty: float = 100.0  # $/°C-hour
+@dataclass
+class OtherConfig:
+    # @TODO
+    pass
 
-    # Economic parameters
-    demand_charge_window: int = 96  # timesteps (24 hours for 15-min timesteps)
 
-    def validate(self) -> bool:
-        """Validate configuration parameters."""
-        checks = [
-            self.timestep > 0,
-            self.simulation_days > 0,
-            self.building_area > 0,
-            self.battery_capacity > 0,
-            self.battery_soc_min < self.battery_soc_max,
-            0 <= self.pv_tilt <= 90,
-            0 <= self.pv_azimuth <= 360,
-        ]
-        return all(checks)
+@dataclass
+class SimulationConfig:
+    env: EnvConfig = EnvConfig()
+    building: BuildingConfig = BuildingConfig()
+    hvac: HVACConfig = HVACConfig() # fell free to adjust if need more sub-class
+    battery: BatteryConfig = BatteryConfig()
+    ev: EVConfig = EVConfig()
+    pv: PVConfig = PVConfig()
 
 
 # Utility functions for data structure manipulation
