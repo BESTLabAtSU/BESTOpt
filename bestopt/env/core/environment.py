@@ -1,522 +1,486 @@
 """
-Runtime environment that manages submodules (building, HVAC, DERs, etc.)
+Runtime environment for bestopt framework.
+Manages module execution and simulation state.
 """
 
 import logging
-import numpy as np
+import importlib
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import asdict
-import time
+
 from .base import BaseModule
-from .data_structure import (
-    State, Action, Disturbance, Observation, Configuration
-)
-from .constants import SIMULATION_DEFAULTS
+from .data_structure import State, Action, Disturbance, Observation
 
 
-class Environment:
-    """
-    Main simulation environment that coordinates all subsystem modules.
-    """
+class BestOptEnvironment:
+    """Runtime environment that manages all modules."""
 
-    def __init__(self, config: Configuration, modules: Optional[Dict[str, BaseModule]] = None):
-        """
-        Initialize the simulation environment.
+    def __init__(self, configuration: Dict[str, Any]):
+        """Initialize environment with configuration.
 
         Args:
-            config: Simulation configuration parameters
-            modules: Pre-initialized modules
+            configuration: Configuration dictionary (from ConfigurationManager.get_final_configuration())
+            expected keys:
+               - environment: {resolution:int, duration:int, ...}
+               - modules: {<name>: {class_path:str, parameters:dict} }
+               - controllers: {<name>: {class_path, parameters}, selected:str }
+               - disturbances: {<name>: {class_path, parameters}, selected:str }
         """
-        self.config = config
-        # Validation
-        config.validate()
+        self.config = configuration
+        self.logger = logging.getLogger("BestOptEnvironment")
 
-        # Setup logging
-        self.logger = logging.getLogger(f"{__name__}.Environment")
+        # Environment config
+        env_config = self.config.get('environment', {})
+        self.res = env_config.get("resolution")
+        if self.res is None:
+            raise ValueError("Missing required config key: 'resolution'")
+        if not isinstance(self.res, int) or self.res <= 0:
+            raise ValueError(f"'resolution' must be a positive int (seconds); got {self.res}")
 
-        # Simulation state
-        self.current_state = State()
-        self.current_disturbance = Disturbance()
-        self.timestep_count = 0
-        self.simulation_time = config.start_time  # hours from start of year
+        self.dur = env_config.get("duration", 24 * 60 * 60)  # 1 day simulation as default
+        if not isinstance(self.dur, int) or self.dur <= 0:
+            raise ValueError(f"'duration' must be a positive int (seconds); got {self.dur}")
 
-        # Module registry
-        self.modules: Dict[str, BaseModule] = modules or {}
-        self.module_order = []  # Execution order for modules
+        # warning if duration not divisible, only accept 'int' steps
+        self.total_step = self.dur // self.res
+        if self.dur % self.res != 0:
+            self.logger.warning(
+                f"duration ({self.dur}) not divisible by resolution ({self.res}); "
+                f"sim will run {self.total_step} steps (= floor)."
+            )
 
-        # Data storage for analysis
-        self.state_history: List[State] = []
-        self.action_history: List[Action] = []
-        self.disturbance_history: List[Disturbance] = []
-        self.kpi_history: List[Dict[str, float]] = []
+        # Simulation data flow
+        self.state = State()
+        self.observation = Observation()
+        self.disturbance = Disturbance()
+        self.action = Action()
 
-        # Performance tracking
-        self.computation_times: Dict[str, List[float]] = {}
-        self.convergence_info: List[Dict[str, Any]] = []
+        # Tracking
+        self.current_step = 0
+        self.done = False
 
-        # Simulation status
-        self.is_initialized = False
-        self.is_done = False
+        # Instance registration
+        self.modules: Dict[str, BaseModule] = {}
+        self.controller: Dict[str, BaseModule] = {}
+        self.disturbance: Dict[str, BaseModule] = {}
 
-        # Initialize internal components
-        self._setup_default_state()
-        self._setup_logging()
+        # Build runtime
+        self._generate_components()  # include modules/controller/disturbance
 
-    def register_module(self, name: str, module: BaseModule, execution_order: int = 0) -> None:
-        """
-        Register a simulation module.
+        self.logger.info(f"Environment configuration finished")
+
+    # Module generation help functions
+    def _generate_components(self) -> None:
+        """Generate all components (modules, controller, disturbances)."""
+        # Generate modules
+        modules_config = self.config.get('modules', {})
+        for module_name, module_info in modules_config.items():
+            instance = self._create_instance(
+                name=module_name,
+                config=module_info,
+                component_type="module",
+                must_subclass=BaseModule
+            )
+            if instance:
+                self.modules[module_name] = instance
+
+        # Generate controller
+        controller_config = self.config.get('controller', {})
+        active_name = controller_config.get('_active')
+        if active_name and controller_config:
+            ctrl_config = {k: v for k, v in controller_config.items() if k != '_active'}
+            instance = self._create_instance(
+                name=active_name,
+                config=ctrl_config,
+                component_type="controller",
+                must_subclass=BaseModule
+            )
+            if instance:
+                self.controller = instance
+        else:
+            self.logger.info("No controller activated; external actions required.")
+
+        # Generate disturbances
+        disturbances_config = self.config.get('disturbances', {})
+        for dist_name, dist_info in disturbances_config.items():
+            instance = self._create_instance(
+                name=dist_name,
+                config=dist_info,
+                component_type="disturbance",
+                must_subclass=BaseModule
+            )
+            if instance:
+                self.disturbance[dist_name] = instance
+
+    def _create_instance(
+            self,
+            name: str,
+            config: Dict[str, Any],
+            component_type: str,
+            must_subclass: Optional[type] = None
+    ) -> Optional[BaseModule]:
+        """Generic function to create component instances.
 
         Args:
-            name: Unique module name
-            module: Module instance inheriting from BaseModule
-            execution_order: Order in which modules are executed (lower first)
+            name: Component name
+            config: Component configuration dict with 'class_path' and 'parameters'
+            component_type: Type for logging ('module', 'controller', 'disturbance')
+            must_subclass: Base class that the component must inherit from
+
+        Returns:
+            Created instance or None if creation failed
         """
-        if name in self.modules:
-            self.logger.warning(f"Replacing existing module: {name}")
+        if not config:
+            self.logger.warning(f"{component_type.title()} '{name}' has empty config; skipping.")
+            return None
 
-        self.modules[name] = module
+        # Get class path
+        class_path = config.get('class_path')
+        if not class_path:
+            self.logger.warning(f"{component_type.title()} '{name}' missing 'class_path'; skipping.")
+            return None
 
-        # Update execution order
-        self.module_order = sorted(
-            [(n, getattr(self.modules[n], '_execution_order', execution_order))
-             for n in self.modules.keys()],
-            key=lambda x: x[1]
-        )
-        self.module_order = [name for name, _ in self.module_order]
+        # Import the class
+        try:
+            component_class = self._import_class(class_path, must_subclass)
+        except Exception as e:
+            self.logger.error(f"Failed to import {component_type} '{name}' from {class_path}: {e}")
+            return None
 
-        self.logger.info(f"Registered module '{name}' with execution order {execution_order}")
+        # Get parameters
+        params = config.get('parameters', {})
 
-    def initialize(self) -> None:
-        """Initialize all modules and prepare for simulation."""
-        self.logger.info("Initializing environment and all modules...")
+        # Create instance
+        try:
+            # Register and initialize
+            instance = component_class(config=params, name=name)
+            instance.initialize()
+            instance._initialized = True
 
-        # Initialize all modules
-        for module_name in self.module_order:
-            module = self.modules[module_name]
-            start_time = time.time()
+            self.logger.info(f"Generated {component_type}: {name} ({class_path})")
+            return instance
 
+        except Exception as e:
+            self.logger.error(f"Failed to create {component_type} '{name}': {e}")
+            raise
+
+    @staticmethod
+    def _import_class(class_path: str, must_subclass: Optional[type] = None):
+        parts = class_path.split('.')
+        module_path = '.'.join(parts[:-1])
+        class_name = parts[-1]
+        mod = importlib.import_module(module_path)
+        cls = getattr(mod, class_name)
+        # To keep consistency, all modules need to inherit from base modules
+        if must_subclass and not issubclass(cls, must_subclass):
+            raise TypeError(f"{class_path} must inherit from {must_subclass.__name__}")
+        return cls
+
+    def _reset_components(self, components: dict, component_type: str) -> None:
+        """Helper function to reset modules, controllers, or disturbances."""
+        for name, comp in components.items():
             try:
-                module.initialize()
-                init_time = time.time() - start_time
-
-                self.logger.info(f"Module '{module_name}' initialized in {init_time:.3f}s")
-
-                if module_name not in self.computation_times:
-                    self.computation_times[module_name] = []
-
+                comp.reset()
+                self.logger.debug(f"Reset {component_type}: {name}")
             except Exception as e:
-                self.logger.error(f"Failed to initialize module '{module_name}': {e}")
-                raise RuntimeError(f"Module initialization failed: {module_name}") from e
+                self.logger.error(f"Error resetting {component_type} {name}: {e}")
+                raise
 
-        # Validate initial state
-        self._validate_state(self.current_state)
+    def reset(self) -> Observation:
+        """
+        Reset the environment to initial state.
+        """
+        self.logger.info("Resetting environment")
 
-        self.is_initialized = True
-        self.logger.info("Environment initialization complete")
+        # Reset tracking
+        self.current_step = 0
+        self.done = False
+
+        # Reset all modules
+        self._reset_components(self.modules, "module")
+        self._reset_components(self.controller, "controller")
+        self._reset_components(self.disturbance, "disturbance")
+
+        # Reset state
+        self.state = State()
+        self.observation = Observation()
+        self.disturbance = Disturbance()
+        self.action = Action()
+
+        # return @TODO return the initial observation
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, Dict[str, Any]]:
-        """
-        Execute one simulation timestep.
+        """Execute one simulation step.
 
         Args:
-            action: Control action to apply
+            action: Control actions for this step
 
         Returns:
             Tuple of (observation, reward, done, info)
         """
-        if not self.is_initialized:
-            raise RuntimeError("Environment must be initialized before stepping")
 
-        if self.is_done:
-            self.logger.warning("Step called on finished simulation")
-            return self.get_observation(), 0.0, True, {'error': 'simulation_finished'}
+        # Check if environment is initialized
+        if not self.modules:
+            raise RuntimeError("No modules loaded. Check configuration.")
 
-        step_start_time = time.time()
+        # Get current disturbance
+        self.disturbance = self._get_disturbance()
 
-        # Store action in history
-        self.action_history.append(action)
-
-        # Update disturbances first
-        self._update_disturbances()
-
-        # Execute modules in order, accumulating state updates
+        # Execute all modules
         module_outputs = {}
-        step_info = {}
-
-        for module_name in self.module_order:
-            module = self.modules[module_name]
-            module_start_time = time.time()
-
+        for name, module in self.modules.items():
             try:
-                # Execute module step
-                output = module.step(
-                    state=self.current_state,
+                outputs = module.step(
+                    state=self.state,
                     action=action,
-                    disturbance=self.current_disturbance,
-                    timestep=self.config.timestep
+                    disturbance=self.disturbance,
+                    timestep=self.timestep
                 )
+                module_outputs[name] = outputs
 
-                module_outputs[module_name] = output
-                module_time = time.time() - module_start_time
-                self.computation_times[module_name].append(module_time)
+                # Update global state with module outputs
+                self._update_state(name, outputs)
 
             except Exception as e:
-                self.logger.error(f"Module '{module_name}' step failed: {e}")
-                step_info['module_errors'] = step_info.get('module_errors', [])
-                step_info['module_errors'].append(f"{module_name}: {str(e)}")
-                # Continue with other modules
+                self.logger.error(f"Error in module {name}.step(): {e}")
+                raise
 
-        # Update system state based on module outputs
-        self._update_state(module_outputs)
+        # Calculate reward
+        reward = self._calculate_reward(module_outputs)
+        self.episode_reward += reward
 
-        # Calculate reward and KPIs
-        reward = self._calculate_reward(action)
-        kpis = self._calculate_kpis()
+        # Update step counter
+        self.current_step += 1
+        self.state.step = self.current_step
 
-        # Update simulation time and check termination
-        self.timestep_count += 1
-        self.simulation_time += self.config.timestep
+        # Check termination
+        self.done = self.current_step >= self.max_steps
 
-        total_hours = self.config.simulation_days * 24
-        self.is_done = self.simulation_time >= (self.config.start_time + total_hours)
+        # Get next observation
+        self.observation = self._get_observation()
 
-        # Store history
-        self.state_history.append(self._copy_state(self.current_state))
-        self.disturbance_history.append(self._copy_disturbance(self.current_disturbance))
-        self.kpi_history.append(kpis)
+        # Prepare info
+        info = {
+            'step': self.current_step,
+            'timestep': self.timestep,
+            'modules': list(self.modules.keys()),
+            'module_outputs': module_outputs,
+            'state': self.state.to_dict(),
+            'episode_reward': self.episode_reward
+        }
 
-        # Prepare step info
-        step_time = time.time() - step_start_time
-        step_info.update({
-            'timestep': self.timestep_count,
-            'simulation_time': self.simulation_time,
-            'step_computation_time': step_time,
-            'kpis': kpis,
-            'module_outputs': module_outputs
-        })
+        return self.observation, reward, self.done, info
 
-        # Validate final state
-        try:
-            self._validate_state(self.current_state)
-        except ValueError as e:
-            self.logger.error(f"Invalid state after step: {e}")
-            step_info['state_validation_error'] = str(e)
+    def _update_state(self, module_name: str, outputs: Dict[str, Any]) -> None:
+        """Update global state based on module outputs.
 
-        return self.get_observation(), reward, self.is_done, step_info
-
-    def reset(self) -> Observation:
+        Args:
+            module_name: Name of the module
+            outputs: Module output dictionary
         """
-        Reset the simulation to initial conditions.
+        # Map module outputs to state variables
+        # Customize this based on your specific modules
+
+        if module_name == 'battery':
+            if 'soc' in outputs:
+                self.state.electrical.battery_soc = outputs['soc']
+            if 'power' in outputs:
+                self.state.electrical.battery_to_building = outputs['power']
+            if 'temperature' in outputs:
+                self.state.electrical.battery_temperature = outputs['temperature']
+
+        elif module_name == 'pv':
+            if 'generation' in outputs:
+                self.state.electrical.pv_building = outputs['generation']
+
+        elif module_name == 'ev':
+            if 'soc' in outputs:
+                self.state.electrical.ev_soc = outputs['soc']
+            if 'power' in outputs:
+                self.state.electrical.ev_to_building = outputs['power']
+
+        elif module_name == 'building':
+            if 'zone_temperatures' in outputs:
+                self.state.thermal.zone_temperatures = outputs['zone_temperatures']
+            if 'plug_loads' in outputs:
+                self.state.electrical.plug_loads_power = outputs['plug_loads']
+
+        elif module_name == 'hvac':
+            if 'power' in outputs:
+                self.state.electrical.hvac_power = outputs['power']
+
+        elif module_name == 'grid':
+            if 'import_power' in outputs:
+                self.state.electrical.grid_building = outputs['import_power']
+
+        # Add more mappings as you develop modules
+
+    def _get_disturbance(self) -> Disturbance:
+        """Get current disturbance values.
 
         Returns:
-            Initial observation
+            Disturbance object with current values
         """
-        self.logger.info("Resetting environment...")
+        dist = Disturbance()
 
-        # Reset simulation state
-        self.timestep_count = 0
-        self.simulation_time = self.config.start_time
-        self.is_done = False
+        # Calculate time-based values
+        hour = (self.current_step * self.timestep / 3600) % 24
 
-        # Clear history
-        self.state_history.clear()
-        self.action_history.clear()
-        self.disturbance_history.clear()
-        self.kpi_history.clear()
-        self.convergence_info.clear()
+        # Example disturbance patterns (replace with data loading)
+        # Weather
+        dist.weather.outdoor_temperature = 20 + 5 * (1 - abs(hour - 14) / 10)
+        dist.weather.solar_radiation = max(0, 800 * (1 - abs(hour - 12) / 6)) if 6 <= hour <= 18 else 0
 
-        # Reset to default state
-        self._setup_default_state()
-        self._update_disturbances()
+        # Prices (example time-of-use pricing)
+        if 16 <= hour <= 21:  # Peak hours
+            dist.prices.electricity_price = 0.25
+        elif 6 <= hour <= 16:  # Mid-peak
+            dist.prices.electricity_price = 0.15
+        else:  # Off-peak
+            dist.prices.electricity_price = 0.10
 
-        # Reset all modules
-        for module_name in self.modules:
-            try:
-                self.modules[module_name].reset()
-            except Exception as e:
-                self.logger.error(f"Failed to reset module '{module_name}': {e}")
+        # Occupancy
+        if 8 <= hour <= 18:  # Work hours
+            dist.occupancy.occupancy_fraction = 0.8
+            dist.occupancy.is_occupied = True
+        else:
+            dist.occupancy.occupancy_fraction = 0.1
+            dist.occupancy.is_occupied = False
 
-        self.logger.info("Environment reset complete")
-        return self.get_observation()
+        return dist
 
-    def get_observation(self) -> Observation:
-        """
-        Get current observation for the controller.
+    def _get_observation(self) -> Observation:
+        """Construct observation from current state.
 
         Returns:
-            Current observation containing relevant state information
+            Observation object
         """
         obs = Observation()
 
-        # Current measurements
-        main_zone_temp = self.current_state.thermal.zone_temperatures.get('main', 22.0)
-        obs.zone_temp = main_zone_temp
-        obs.zone_humidity = self.current_state.thermal.zone_humidity.get('main', 50.0)
-        obs.battery_soc = self.current_state.electrical.battery_soc
-        obs.ev_soc = self.current_state.electrical.ev_soc
-        obs.pv_power = self.current_state.electrical.pv_power
-        obs.grid_power = self.current_state.electrical.grid_power
-
-        # Comfort requirements from occupancy
-        obs.comfort_temp_min = self.current_disturbance.occupancy.comfort_temp_min
-        obs.comfort_temp_max = self.current_disturbance.occupancy.comfort_temp_max
-
         # Time information
-        obs.time_of_day = self.simulation_time % 24
-        obs.day_of_week = int((self.simulation_time // 24) % 7) + 1
-        obs.day_of_year = int((self.simulation_time // 24) % 365) + 1
+        obs.time_of_day = (self.current_step * self.timestep / 3600) % 24
+        obs.day_of_week = int((self.current_step * self.timestep / 86400)) % 7 + 1
+        obs.day_of_year = int((self.current_step * self.timestep / 86400)) % 365 + 1
 
-        # Simple forecasts (in practice, these would come from disturbances modules)
-        forecast_horizon = min(24, int(24 / self.config.timestep))  # 24-hour forecast
+        # Current state information
+        obs.extras['battery_soc'] = self.state.electrical.battery_soc
+        obs.extras['ev_soc'] = self.state.electrical.ev_soc
+        obs.extras['grid_power'] = self.state.electrical.grid_building
 
-        obs.outdoor_temp_forecast = [
-            self.current_disturbance.weather.outdoor_temperature + np.random.normal(0, 1)
-            for _ in range(forecast_horizon)
-        ]
-
-        obs.solar_forecast = [
-            max(0, self.current_disturbance.weather.solar_irradiance + np.random.normal(0, 50))
-            for _ in range(forecast_horizon)
-        ]
-
-        obs.price_forecast = [
-            max(0.05, self.current_disturbance.prices.electricity_price + np.random.normal(0, 0.02))
-            for _ in range(forecast_horizon)
-        ]
-
-        obs.occupancy_forecast = [
-            self.current_disturbance.occupancy.occupancy_fraction
-            for _ in range(forecast_horizon)
-        ]
+        # Forecasts (simplified - replace with actual forecasting)
+        forecast_hours = 24
+        obs.outdoor_temp_forecast = [20.0] * forecast_hours
+        obs.solar_forecast = [0.0] * forecast_hours
+        obs.price_forecast = [0.1] * forecast_hours
+        obs.occupancy_forecast = [0.5] * forecast_hours
 
         return obs
 
-    def get_state_dict(self) -> Dict[str, Any]:
-        """Get complete current state as dictionary."""
-        return {
-            'state': self.current_state.to_dict(),
-            'disturbances': asdict(self.current_disturbance),
-            'simulation_time': self.simulation_time,
-            'timestep_count': self.timestep_count,
-            'is_done': self.is_done
-        }
+    def _calculate_reward(self, module_outputs: Dict[str, Dict]) -> float:
+        """Calculate reward for this step.
 
-    def get_performance_summary(self) -> Dict[str, Any]:
-        """Get simulation performance summary."""
-        if not self.computation_times:
-            return {'message': 'No performance data available'}
+        Args:
+            module_outputs: Outputs from all modules
 
-        summary = {}
-        for module_name, times in self.computation_times.items():
-            if times:
-                summary[module_name] = {
-                    'mean_time': np.mean(times),
-                    'max_time': np.max(times),
-                    'min_time': np.min(times),
-                    'std_time': np.std(times),
-                    'total_time': np.sum(times),
-                    'call_count': len(times)
-                }
-
-        if self.kpi_history:
-            # Calculate KPI statistics
-            kpi_summary = {}
-            all_kpis = {key: [] for key in self.kpi_history[0].keys()}
-
-            for kpi_dict in self.kpi_history:
-                for key, value in kpi_dict.items():
-                    all_kpis[key].append(value)
-
-            for key, values in all_kpis.items():
-                kpi_summary[key] = {
-                    'mean': np.mean(values),
-                    'max': np.max(values),
-                    'min': np.min(values),
-                    'std': np.std(values),
-                    'final': values[-1] if values else 0.0
-                }
-
-            summary['kpis'] = kpi_summary
-
-        return summary
-
-    # ==================== PRIVATE METHODS ====================
-
-    def _setup_default_state(self) -> None:
-        """Initialize default system state."""
-        self.current_state = State()
-
-        # Default thermal state
-        self.current_state.thermal.zone_temperatures = {'main': 22.0}
-        self.current_state.thermal.zone_humidity = {'main': 50.0}
-        self.current_state.thermal.hvac_supply_temp = 20.0
-        self.current_state.thermal.hvac_return_temp = 22.0
-
-        # Default electrical state
-        self.current_state.electrical.battery_soc = 50.0
-        self.current_state.electrical.ev_soc = 50.0
-        self.current_state.electrical.grid_voltage = 240.0
-        self.current_state.electrical.grid_frequency = 60.0
-
-        # Update metadata
-        self.current_state.timestamp = self.simulation_time
-        self.current_state.step_count = self.timestep_count
-
-    def _setup_logging(self) -> None:
-        """Configure logging for the simulation."""
-        log_level = logging.INFO
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler('simulation.log')
-            ]
-        )
-
-    def _update_disturbances(self) -> None:
-        """Update disturbances values for current timestep."""
-        # This is simplified - in practice, disturbances modules would provide this
-
-        # Simple weather model (sinusoidal daily pattern)
-        hour_of_day = self.simulation_time % 24
-        day_of_year = (self.simulation_time // 24) % 365
-
-        # Temperature variation
-        daily_avg_temp = 20.0 + 10.0 * np.sin(2 * np.pi * day_of_year / 365)  # Seasonal
-        daily_temp_variation = 8.0 * np.sin(2 * np.pi * (hour_of_day - 6) / 24)  # Daily
-
-        self.current_disturbance.weather.outdoor_temperature = (
-                daily_avg_temp + daily_temp_variation + np.random.normal(0, 1)
-        )
-
-        # Solar irradiance (simple model)
-        if 6 <= hour_of_day <= 18:  # Daytime
-            solar_elevation = max(0, np.sin(np.pi * (hour_of_day - 6) / 12))
-            self.current_disturbance.weather.solar_irradiance = (
-                    1000.0 * solar_elevation * (0.7 + 0.3 * np.random.random())
-            )
-        else:
-            self.current_disturbance.weather.solar_irradiance = 0.0
-
-        # Simple occupancy model
-        is_weekday = ((self.simulation_time // 24) % 7) < 5
-        if is_weekday and 8 <= hour_of_day <= 18:  # Work hours
-            self.current_disturbance.occupancy.occupancy_fraction = 0.2
-            self.current_disturbance.occupancy.is_occupied = False
-        elif 18 <= hour_of_day <= 23 or 6 <= hour_of_day <= 8:  # Evening/morning
-            self.current_disturbance.occupancy.occupancy_fraction = 1.0
-            self.current_disturbance.occupancy.is_occupied = True
-        else:
-            self.current_disturbance.occupancy.occupancy_fraction = 1.0
-            self.current_disturbance.occupancy.is_occupied = True
-
-        # Simple electricity pricing (peak/off-peak)
-        if 16 <= hour_of_day <= 20:  # Peak hours
-            self.current_disturbance.prices.electricity_price = 0.25
-        elif 22 <= hour_of_day <= 6:  # Off-peak
-            self.current_disturbance.prices.electricity_price = 0.08
-        else:  # Mid-peak
-            self.current_disturbance.prices.electricity_price = 0.15
-
-    def _update_state(self, module_outputs: Dict[str, Dict[str, Any]]) -> None:
-        """Update system state based on module outputs."""
-        # This method would merge outputs from all modules
-        # For now, just update timestamp and step count
-        self.current_state.timestamp = self.simulation_time
-        self.current_state.step_count = self.timestep_count
-
-        # In practice, you would merge thermal and electrical states from modules
-        # Example structure for module outputs:
-        # {
-        #   'building_thermal': {'zone_temp': 23.2, 'hvac_power': 2.5},
-        #   'battery': {'soc': 65.3, 'power': -1.2},
-        #   'pv': {'power': 4.8, 'voltage': 245.0}
-        # }
-
-    def _calculate_reward(self, action: Action) -> float:
-        """Calculate reward signal for RL training."""
+        Returns:
+            Scalar reward value
+        """
         reward = 0.0
 
-        # Comfort penalty
-        zone_temp = self.current_state.thermal.zone_temperatures.get('main', 22.0)
-        comfort_min = self.current_disturbance.occupancy.comfort_temp_min
-        comfort_max = self.current_disturbance.occupancy.comfort_temp_max
+        # Get reward weights from config
+        opt_config = self.config.get('optimization', {})
+        objective = opt_config.get('objective', 'minimize_cost')
 
-        if zone_temp < comfort_min:
-            reward -= 10.0 * (comfort_min - zone_temp) ** 2
-        elif zone_temp > comfort_max:
-            reward -= 10.0 * (zone_temp - comfort_max) ** 2
+        if objective == 'minimize_cost':
+            # Energy cost
+            price = self.disturbance.prices.electricity_price
+            grid_power = self.state.electrical.grid_building
+            energy_cost = -abs(grid_power) * price * (self.timestep / 3600)
+            reward += energy_cost
 
-        # Energy cost penalty
-        grid_power = abs(self.current_state.electrical.grid_power)
-        electricity_price = self.current_disturbance.prices.electricity_price
-        energy_cost = grid_power * self.config.timestep * electricity_price
-        reward -= energy_cost
+        elif objective == 'minimize_carbon':
+            # Carbon emissions
+            carbon_intensity = self.disturbance.prices.carbon_intensity
+            grid_power = max(0, self.state.electrical.grid_building)  # Only imports
+            carbon_cost = -grid_power * carbon_intensity * (self.timestep / 3600) / 1000
+            reward += carbon_cost
 
-        # Battery cycling penalty
-        battery_power = abs(self.current_state.electrical.battery_power)
-        reward -= 0.01 * battery_power  # Small cycling cost
+        elif objective == 'maximize_self_consumption':
+            # Self-consumption of renewable energy
+            if 'pv' in module_outputs:
+                pv_gen = module_outputs['pv'].get('generation', 0)
+                grid_export = min(0, self.state.electrical.grid_building)
+                self_consumption = pv_gen + grid_export  # Consumption = generation - export
+                reward += self_consumption * 0.1
+
+        # Add comfort penalty if available
+        if 'building' in module_outputs:
+            comfort_violation = module_outputs['building'].get('comfort_violation', 0)
+            reward -= comfort_violation * 10
 
         return reward
 
-    def _calculate_kpis(self) -> Dict[str, float]:
-        """Calculate Key Performance Indicators."""
-        kpis = {}
+    def get_info(self) -> Dict[str, Any]:
+        """Get current environment information.
 
-        # Energy KPIs
-        kpis['grid_energy'] = abs(self.current_state.electrical.grid_power) * self.config.timestep
-        kpis['pv_energy'] = self.current_state.electrical.pv_power * self.config.timestep
-        kpis['battery_energy'] = abs(self.current_state.electrical.battery_power) * self.config.timestep
+        Returns:
+            Dictionary with environment status
+        """
+        return {
+            'current_step': self.current_step,
+            'max_steps': self.max_steps,
+            'timestep': self.timestep,
+            'episode_reward': self.episode_reward,
+            'modules': list(self.modules.keys()),
+            'done': self.done
+        }
 
-        # Comfort KPIs
-        zone_temp = self.current_state.thermal.zone_temperatures.get('main', 22.0)
-        comfort_min = self.current_disturbance.occupancy.comfort_temp_min
-        comfort_max = self.current_disturbance.occupancy.comfort_temp_max
+    def get_module(self, name: str) -> Optional[BaseModule]:
+        """Get a specific module instance.
 
-        kpis['comfort_violation'] = max(0, zone_temp - comfort_max) + max(0, comfort_min - zone_temp)
-        kpis['zone_temperature'] = zone_temp
+        Args:
+            name: Module name
 
-        # Economic KPIs
-        electricity_price = self.current_disturbance.prices.electricity_price
-        kpis['electricity_cost'] = (
-                max(0, self.current_state.electrical.grid_power) *
-                self.config.timestep * electricity_price
-        )
+        Returns:
+            Module instance or None if not found
+        """
+        return self.modules.get(name)
 
-        # Efficiency KPIs
-        total_load = (self.current_state.electrical.hvac_power +
-                      self.current_state.electrical.lighting_power +
-                      self.current_state.electrical.plug_loads_power)
+    def render(self, mode: str = 'human') -> Optional[Dict]:
+        """Render the environment state.
 
-        if self.current_state.electrical.pv_power > 0:
-            kpis['pv_utilization'] = min(1.0, total_load / self.current_state.electrical.pv_power)
-        else:
-            kpis['pv_utilization'] = 0.0
+        Args:
+            mode: Rendering mode ('human' for text, 'dict' for dictionary)
 
-        return kpis
+        Returns:
+            State dictionary if mode='dict', None otherwise
+        """
+        if mode == 'human':
+            print(f"\n=== Step {self.current_step}/{self.max_steps} ===")
+            print(f"Time: {self.observation.time_of_day:.1f}:00")
+            print(f"Episode Reward: {self.episode_reward:.2f}")
+            print(f"Active Modules: {', '.join(self.modules.keys())}")
 
-    def _validate_state(self, state: State) -> None:
-        """Validate state values are within reasonable bounds."""
-        # Temperature bounds
-        for zone, temp in state.thermal.zone_temperatures.items():
-            if not (-10 <= temp <= 50):
-                raise ValueError(f"Zone {zone} temperature {temp}°C out of bounds")
+            # Module states
+            if 'battery' in self.modules:
+                print(f"Battery SOC: {self.state.electrical.battery_soc:.1%}")
+            if 'ev' in self.modules:
+                print(f"EV SOC: {self.state.electrical.ev_soc:.1%}")
+            if 'pv' in self.modules:
+                print(f"PV Generation: {self.state.electrical.pv_building:.1f} kW")
 
-        # SOC bounds
-        if not (0 <= state.electrical.battery_soc <= 100):
-            raise ValueError(f"Battery SOC {state.electrical.battery_soc}% out of bounds")
+            print(f"Grid Power: {self.state.electrical.grid_building:.1f} kW")
 
-        if not (0 <= state.electrical.ev_soc <= 100):
-            raise ValueError(f"EV SOC {state.electrical.ev_soc}% out of bounds")
+        elif mode == 'dict':
+            return self.state.to_dict()
 
-    def _copy_state(self, state: State) -> State:
-        """Create a deep copy of the state."""
-        # Simple implementation - in practice, you might need more sophisticated copying
-        import copy
-        return copy.deepcopy(state)
+        return None
 
-    def _copy_disturbance(self, disturbance: Disturbance) -> Disturbance:
-        """Create a deep copy of the disturbances."""
-        import copy
-        return copy.deepcopy(disturbance)
+    def close(self) -> None:
+        """Clean up resources."""
+        for name, module in self.modules.items():
+            if hasattr(module, 'close'):
+                module.close()
+                self.logger.debug(f"Closed module: {name}")
+
+        self.modules.clear()
+        self.logger.info("Environment closed")
