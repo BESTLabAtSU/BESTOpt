@@ -97,7 +97,7 @@ def list_registered_modules() -> Dict[str, ModuleSpec]:
     return dict(MODULE_REGISTRY)
 
 
-def build_modules(
+def build_module(
         cfg: Dict[str, Any],
         *,
         enabled: Optional[list[str]] = None,

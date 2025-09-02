@@ -33,7 +33,7 @@ building_simulation/
 │   ├── base.py
 │   ├── pid.py
 │   └── mpc.py
-├── disturbance/
+├── disturbances/
 │   ├── __init__.py
 │   ├── weather.py
 │   ├── price.py
@@ -92,7 +92,7 @@ class DynamicModule(SimulationModule):
                          control_action: Dict[str, float],
                          disturbance: Dict[str, float],
                          dt: float) -> Dict[str, float]:
-        """Calculate next state based on current state, control, and disturbance."""
+        """Calculate next state based on current state, control, and disturbances."""
         pass
 
     def step(self, control_action: Dict[str, float],
@@ -123,7 +123,7 @@ class StaticModule(SimulationModule):
     @abstractmethod
     def calculate_output(self, control_action: Dict[str, float],
                          disturbance: Dict[str, float]) -> Dict[str, float]:
-        """Calculate output based on control and disturbance."""
+        """Calculate output based on control and disturbances."""
         pass
 
     def get_state(self) -> Dict[str, float]:
@@ -352,7 +352,7 @@ class Controller(ABC):
     def compute_control(self, state: Dict[str, float],
                         reference: Dict[str, float],
                         disturbance: Optional[Dict[str, float]] = None) -> Dict[str, float]:
-        """Compute control action based on state, reference, and disturbance."""
+        """Compute control action based on state, reference, and disturbances."""
         pass
 
     def update_setpoint(self, setpoint: Dict[str, float]):
@@ -395,9 +395,9 @@ class PIDController(Controller):
         return {'control_output': output}
 
 
-# disturbance/weather.py
+# disturbances/weather.py
 class WeatherDisturbance:
-    """Weather disturbance generator."""
+    """Weather disturbances generator."""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -410,7 +410,7 @@ class WeatherDisturbance:
         pass
 
     def get_disturbance(self, timestamp: float) -> Dict[str, float]:
-        """Get weather disturbance at given timestamp."""
+        """Get weather disturbances at given timestamp."""
         # Simple synthetic weather for demonstration
         hour = (timestamp / 3600) % 24
 
@@ -430,9 +430,9 @@ class WeatherDisturbance:
         }
 
 
-# disturbance/price.py
+# disturbances/price.py
 class PriceDisturbance:
-    """Electricity price disturbance generator."""
+    """Electricity price disturbances generator."""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config

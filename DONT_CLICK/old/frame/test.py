@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class ModuleType(Enum):
     """Enumeration of module types in the framework"""
     OCCUPANCY = "occupancy"
-    DISTURBANCE = "disturbance"
+    DISTURBANCE = "disturbances"
     HVAC = "hvac"
     DER = "ders"
     EQUIPMENT = "equipment"
@@ -209,9 +209,9 @@ class DisturbanceModule(PIMLModule):
         self.price_model = None
 
     def forward(self, inputs: ModuleInput) -> ModuleOutput:
-        """Generate disturbance predictions"""
+        """Generate disturbances predictions"""
         if not self.validate_inputs(inputs):
-            raise ValueError("Invalid inputs for disturbance module")
+            raise ValueError("Invalid inputs for disturbances module")
 
         timestamp = inputs.timestamp
 
@@ -231,12 +231,12 @@ class DisturbanceModule(PIMLModule):
                 'electricity_price': price['electricity'],
                 'gas_price': price['gas']
             },
-            metadata={'module_type': 'disturbance'}
+            metadata={'module_type': 'disturbances'}
         )
 
     def train(self, training_data: pd.DataFrame) -> None:
-        """Train disturbance prediction models"""
-        logger.info(f"Training disturbance module {self.module_id}")
+        """Train disturbances prediction models"""
+        logger.info(f"Training disturbances module {self.module_id}")
 
         # Train weather model
         self.weather_model = self._train_weather_model(training_data)

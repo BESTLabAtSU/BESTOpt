@@ -35,7 +35,7 @@ class ControlVariable:
 
 @dataclass
 class DisturbanceVariable:
-    """Container for disturbance variables"""
+    """Container for disturbances variables"""
     name: str
     value: float
     unit: str

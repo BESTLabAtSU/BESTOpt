@@ -19,7 +19,7 @@ class ModOccupancy:
     def get_values(self, timestep: int):
         """Returns disturbances for the current time step as a dict."""
         if timestep >= self.data.shape[0]:
-            raise IndexError("Time step index is out of bounds for disturbance data.")
+            raise IndexError("Time step index is out of bounds for disturbances data.")
 
         Tamb = self.data[timestep, 0]
         Solar = self.data[timestep, 1]

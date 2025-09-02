@@ -5,21 +5,21 @@ from ..core.base_module import BaseModule, DisturbanceVariable
 
 
 class DisturbanceModule(BaseModule):
-    """External disturbance module for weather and utility pricing"""
+    """External disturbances module for weather and utility pricing"""
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.data_source = config.get('data_source', None)
         self.current_index = 0
 
-        # Load disturbance data if provided
+        # Load disturbances data if provided
         if self.data_source:
             self.data = self._load_data(self.data_source)
         else:
             self.data = None
 
     def _initialize_variables(self):
-        """Initialize disturbance variables"""
+        """Initialize disturbances variables"""
         self.disturbances['outdoor_temperature'] = DisturbanceVariable(
             name='outdoor_temperature',
             value=20.0,
@@ -45,7 +45,7 @@ class DisturbanceModule(BaseModule):
         )
 
     def _load_data(self, source: str) -> pd.DataFrame:
-        """Load disturbance data from file"""
+        """Load disturbances data from file"""
         if isinstance(source, str) and source.endswith('.csv'):
             return pd.read_csv(source, parse_dates=['timestamp'])
         else:
@@ -101,7 +101,7 @@ class DisturbanceModule(BaseModule):
                signal_bus: Dict[str, Any],
                thermal_bus: Dict[str, Any],
                electric_bus: Dict[str, Any]):
-        """Update disturbance values"""
+        """Update disturbances values"""
         if self.data is not None:
             # Use data from file/synthetic
             current_data = self.data.iloc[self.current_index]
@@ -114,11 +114,11 @@ class DisturbanceModule(BaseModule):
             self.current_index = (self.current_index + 1) % len(self.data)
 
     def get_disturbance(self, name: str) -> float:
-        """Get current disturbance value"""
+        """Get current disturbances value"""
         return self.disturbances[name].value if name in self.disturbances else None
 
     def predict(self, name: str, horizon: int) -> np.ndarray:
-        """Predict future disturbance values"""
+        """Predict future disturbances values"""
         if self.data is None:
             return np.array([self.disturbances[name].value] * horizon)
 

@@ -4,12 +4,13 @@ Runtime environment that manages submodules (building, HVAC, DERs, etc.)
 
 import logging
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Type, Tuple
 from dataclasses import asdict
 import time
 from .base import BaseModule
 from .data_structure import (
-    State, Action, Disturbance, Observation, Configuration
+    State, Action, Disturbance, Observation, SimulationConfig,
+    ThermalState, ElectricalState, WeatherData, PriceSignals, OccupancyData
 )
 from .constants import SIMULATION_DEFAULTS
 
@@ -19,7 +20,7 @@ class Environment:
     Main simulation environment that coordinates all subsystem modules.
     """
 
-    def __init__(self, config: Configuration, modules: Optional[Dict[str, BaseModule]] = None):
+    def __init__(self, config: SimulationConfig, modules: Optional[Dict[str, BaseModule]] = None):
         """
         Initialize the simulation environment.
 
@@ -28,8 +29,8 @@ class Environment:
             modules: Pre-initialized modules
         """
         self.config = config
-        # Validation
-        config.validate()
+        if not config.validate():
+            raise ValueError("Invalid simulation configuration")
 
         # Setup logging
         self.logger = logging.getLogger(f"{__name__}.Environment")

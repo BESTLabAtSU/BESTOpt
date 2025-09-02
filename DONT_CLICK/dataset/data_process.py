@@ -16,7 +16,7 @@ def data_process(Tamb: Union[np.ndarray, pd.Series],
                  validate_data: bool = True) -> pd.DataFrame:
     """
     Format user data into a structured DataFrame.
-    This function takes state, disturbance and control input.
+    This function takes state, disturbances and control input.
     and formats them into a pandas DataFrame for ModNN dynamic modeling training.
     Time resolution is 15 minutes.
     All input arrays/series will be automatically converted to numpy arrays and reshaped to 1D.

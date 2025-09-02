@@ -1,5 +1,5 @@
 """
-EV module.
+Building thermal dynamic module.
 """
 
 import numpy as np
@@ -8,26 +8,26 @@ from enum import Enum
 import logging
 
 from ...core.base import BaseModule
-from ...core.data_structure import State, Action, Disturbance, EVMode
+from ...core.data_structure import State, Action, Disturbance, BatteryMode
 
 
-class EVModule(BaseModule):
+class ThermalDynamicsModule(BaseModule):
     """
-    EV energy storage model.
+    Building thermal dynamic.
 
     Features:
     # @TODO
-    - 
-    - 
-    - 
+    -
+    -
+    -
     """
 
-    def __init__(self, config: Dict[str, Any], name: str = "EV"):
+    def __init__(self, config: Dict[str, Any], name: str = ""):
         """
-        Initialize EV module.
+        Initialize building thermal dynamic module.
 
         Args:
-            config: EV configuration parameters
+            config: building thermal dynamic configuration parameters
             name: Module name
         """
         super().__init__(config, name)

@@ -1,0 +1,134 @@
+{
+  "simulation": {
+    "name": "Building Energy Optimization",
+    "description": "Optimize building energy with DERs",
+    "timestep_seconds": 900,
+    "max_steps": 96,
+    "start_date": "2024-01-01",
+    "weather_file": "data/weather.csv",
+    "price_file": "data/electricity_prices.csv"
+  },
+
+  "modules": {
+    "battery": {
+      "class_path": "bestopt.modules.battery.BatteryModule",
+      "description": "Stationary battery energy storage system",
+      "parameters": {
+        "battery_capacity": 20.0,
+        "battery_c_rate": 0.5,
+        "charge_efficiency": 0.95,
+        "discharge_efficiency": 0.95,
+        "soc_min": 0.1,
+        "soc_max": 0.9,
+        "initial_soc": 0.5
+      }
+    },
+
+    "pv": {
+      "class_path": "bestopt.modules.pv.PVModule",
+      "description": "Photovoltaic solar generation",
+      "parameters": {
+        "pv_capacity": 10.0,
+        "efficiency": 0.18,
+        "degradation_rate": 0.005,
+        "tilt_angle": 30,
+        "azimuth": 180
+      }
+    },
+
+    "ev": {
+      "class_path": "bestopt.modules.ev.EVModule",
+      "description": "Electric vehicle with V2G capability",
+      "parameters": {
+        "ev_capacity": 60.0,
+        "ev_c_rate": 0.25,
+        "charge_efficiency": 0.90,
+        "discharge_efficiency": 0.90,
+        "soc_min": 0.2,
+        "soc_max": 0.9,
+        "arrival_time": 18,
+        "departure_time": 8,
+        "target_soc_departure": 0.8
+      }
+    },
+
+    "building": {
+      "class_path": "bestopt.modules.building.BuildingModule",
+      "description": "Building thermal and electrical model",
+      "parameters": {
+        "floor_area": 1000.0,
+        "num_zones": 5,
+        "thermal_mass": 50000.0,
+        "wall_u_value": 0.3,
+        "window_u_value": 1.2,
+        "occupancy_schedule": "data/occupancy.csv"
+      }
+    },
+
+    "hvac": {
+      "class_path": "bestopt.modules.hvac.HVACModule",
+      "description": "HVAC system for heating and cooling",
+      "parameters": {
+        "cooling_capacity": 30.0,
+        "heating_capacity": 35.0,
+        "cop_cooling": 3.5,
+        "cop_heating": 4.0,
+        "setpoint_cooling": 24.0,
+        "setpoint_heating": 20.0
+      }
+    },
+
+    "grid": {
+      "class_path": "bestopt.modules.grid.GridModule",
+      "description": "Grid connection and power flow management",
+      "parameters": {
+        "max_import_power": 50.0,
+        "max_export_power": 30.0,
+        "voltage": 240,
+        "phases": 1
+      }
+    },
+
+    "wind": {
+      "class_path": "bestopt.modules.wind.WindModule",
+      "description": "Wind turbine generation",
+      "parameters": {
+        "turbine_capacity": 5.0,
+        "hub_height": 30.0,
+        "cut_in_speed": 3.0,
+        "rated_speed": 12.0,
+        "cut_out_speed": 25.0
+      }
+    },
+
+    "thermal_storage": {
+      "class_path": "bestopt.modules.tes.ThermalStorageModule",
+      "description": "Thermal energy storage system",
+      "parameters": {
+        "storage_capacity": 100.0,
+        "charge_rate": 20.0,
+        "discharge_rate": 20.0,
+        "efficiency": 0.85,
+        "heat_loss_rate": 0.02
+      }
+    }
+  },
+
+  "control": {
+    "type": "rule_based",
+    "parameters": {
+      "battery_charge_hours": [10, 11, 12, 13, 14],
+      "battery_discharge_hours": [17, 18, 19, 20, 21],
+      "ev_smart_charging": true
+    }
+  },
+
+  "optimization": {
+    "objective": "minimize_cost",
+    "constraints": {
+      "comfort_bounds": true,
+      "battery_degradation_limit": 0.2,
+      "carbon_limit": null
+    }
+  }
+}

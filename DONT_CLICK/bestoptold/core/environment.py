@@ -92,11 +92,11 @@ class Environment:
         return measurements
 
     def _get_disturbances(self) -> Dict[str, float]:
-        """Get current disturbance values"""
-        if 'disturbance' not in self.modules:
+        """Get current disturbances values"""
+        if 'disturbances' not in self.modules:
             return {}
 
-        dist_module = self.modules['disturbance']
+        dist_module = self.modules['disturbances']
         return {
             'outdoor_temp': dist_module.get_disturbance('outdoor_temperature'),
             'solar_radiation': dist_module.get_disturbance('solar_radiation'),

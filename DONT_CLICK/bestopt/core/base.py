@@ -46,7 +46,7 @@ class DynamicModule(Module):
                          control_action: Dict[str, float],
                          disturbance: Dict[str, float],
                          dt: float) -> Dict[str, float]:
-        """Calculate next state based on current state, control, and disturbance."""
+        """Calculate next state based on current state, control, and disturbances."""
         pass
 
     def step(self, control_action: Dict[str, float],
@@ -77,7 +77,7 @@ class StaticModule(Module):
     @abstractmethod
     def calculate_output(self, control_action: Dict[str, float],
                          disturbance: Dict[str, float]) -> Dict[str, float]:
-        """Calculate output based on control and disturbance."""
+        """Calculate output based on control and disturbances."""
         pass
 
     def get_state(self) -> Dict[str, float]:
