@@ -208,279 +208,69 @@ class BestOptEnvironment:
 
         # return @TODO return the initial observation
 
-    def step(self, action: Action) -> Tuple[Observation, float, bool, Dict[str, Any]]:
+    def step(self, action: Action) -> Tuple[Observation, bool, Dict[str, Any]]:
         """Execute one simulation step.
 
         Args:
             action: Control actions for this step
 
         Returns:
-            Tuple of (observation, reward, done, info)
+           Tuple of (observation, done, info):
+           - observation: Current system observation for the controller
+           - done: Whether simulation is complete
+           - info: Additional simulation information / metrics
         """
+        # Check simulation status
+        if self.done:
+            self.logger.warning("Environment is done. Call reset() to restart.")
+            return self.observation, True, {}
 
-        # Check if environment is initialized
-        if not self.modules:
-            raise RuntimeError("No modules loaded. Check configuration.")
+        # Get control actions
+        try:
+            # @TODO the format of action need to be carefully defined
+            self.action = self.controller.step(
+                state=self.state,
+                action=self.action,
+                disturbance=self.disturbance,
+                resolution=self.res,
+                timestep=self.current_step
+            )
+        except Exception as e:
+            self.logger.error(f"Controller step failed: {e}")
 
-        # Get current disturbance
-        self.disturbance = self._get_disturbance()
+        # Get disturbance
+        try:
+            self.disturbance = self.disturbance.step(
+                resolution=self.res,
+                timestep=self.current_step
+            )
+        except Exception as e:
+            self.logger.error(f"Disturbance step failed: {e}")
 
-        # Execute all modules
+        # Get modules update
         module_outputs = {}
-        for name, module in self.modules.items():
+        for module_name, module in self.modules.items():
             try:
-                outputs = module.step(
+                output = module.step(
                     state=self.state,
-                    action=action,
+                    action=self.action,
                     disturbance=self.disturbance,
-                    timestep=self.timestep
+                    resolution=self.res,
+                    timestep=self.current_step
                 )
-                module_outputs[name] = outputs
-
-                # Update global state with module outputs
-                self._update_state(name, outputs)
-
+                module_outputs[module_name] = output
             except Exception as e:
-                self.logger.error(f"Error in module {name}.step(): {e}")
-                raise
+                self.logger.error(f"Module {module_name} step failed: {e}")
 
-        # Calculate reward
-        reward = self._calculate_reward(module_outputs)
-        self.episode_reward += reward
+        # Get observation
+        # @TODO self._update_observation()
 
-        # Update step counter
+        # Get tracking update
         self.current_step += 1
-        self.state.step = self.current_step
+        if self.current_step >= self.total_step:
+            self.done = True
+            self.logger.info(f"Simulation completed after {self.current_step} steps")
 
-        # Check termination
-        self.done = self.current_step >= self.max_steps
+        # Grab all information
+        # @TODO info = self._collect_step_info(module_outputs)
 
-        # Get next observation
-        self.observation = self._get_observation()
-
-        # Prepare info
-        info = {
-            'step': self.current_step,
-            'timestep': self.timestep,
-            'modules': list(self.modules.keys()),
-            'module_outputs': module_outputs,
-            'state': self.state.to_dict(),
-            'episode_reward': self.episode_reward
-        }
-
-        return self.observation, reward, self.done, info
-
-    def _update_state(self, module_name: str, outputs: Dict[str, Any]) -> None:
-        """Update global state based on module outputs.
-
-        Args:
-            module_name: Name of the module
-            outputs: Module output dictionary
-        """
-        # Map module outputs to state variables
-        # Customize this based on your specific modules
-
-        if module_name == 'battery':
-            if 'soc' in outputs:
-                self.state.electrical.battery_soc = outputs['soc']
-            if 'power' in outputs:
-                self.state.electrical.battery_to_building = outputs['power']
-            if 'temperature' in outputs:
-                self.state.electrical.battery_temperature = outputs['temperature']
-
-        elif module_name == 'pv':
-            if 'generation' in outputs:
-                self.state.electrical.pv_building = outputs['generation']
-
-        elif module_name == 'ev':
-            if 'soc' in outputs:
-                self.state.electrical.ev_soc = outputs['soc']
-            if 'power' in outputs:
-                self.state.electrical.ev_to_building = outputs['power']
-
-        elif module_name == 'building':
-            if 'zone_temperatures' in outputs:
-                self.state.thermal.zone_temperatures = outputs['zone_temperatures']
-            if 'plug_loads' in outputs:
-                self.state.electrical.plug_loads_power = outputs['plug_loads']
-
-        elif module_name == 'hvac':
-            if 'power' in outputs:
-                self.state.electrical.hvac_power = outputs['power']
-
-        elif module_name == 'grid':
-            if 'import_power' in outputs:
-                self.state.electrical.grid_building = outputs['import_power']
-
-        # Add more mappings as you develop modules
-
-    def _get_disturbance(self) -> Disturbance:
-        """Get current disturbance values.
-
-        Returns:
-            Disturbance object with current values
-        """
-        dist = Disturbance()
-
-        # Calculate time-based values
-        hour = (self.current_step * self.timestep / 3600) % 24
-
-        # Example disturbance patterns (replace with data loading)
-        # Weather
-        dist.weather.outdoor_temperature = 20 + 5 * (1 - abs(hour - 14) / 10)
-        dist.weather.solar_radiation = max(0, 800 * (1 - abs(hour - 12) / 6)) if 6 <= hour <= 18 else 0
-
-        # Prices (example time-of-use pricing)
-        if 16 <= hour <= 21:  # Peak hours
-            dist.prices.electricity_price = 0.25
-        elif 6 <= hour <= 16:  # Mid-peak
-            dist.prices.electricity_price = 0.15
-        else:  # Off-peak
-            dist.prices.electricity_price = 0.10
-
-        # Occupancy
-        if 8 <= hour <= 18:  # Work hours
-            dist.occupancy.occupancy_fraction = 0.8
-            dist.occupancy.is_occupied = True
-        else:
-            dist.occupancy.occupancy_fraction = 0.1
-            dist.occupancy.is_occupied = False
-
-        return dist
-
-    def _get_observation(self) -> Observation:
-        """Construct observation from current state.
-
-        Returns:
-            Observation object
-        """
-        obs = Observation()
-
-        # Time information
-        obs.time_of_day = (self.current_step * self.timestep / 3600) % 24
-        obs.day_of_week = int((self.current_step * self.timestep / 86400)) % 7 + 1
-        obs.day_of_year = int((self.current_step * self.timestep / 86400)) % 365 + 1
-
-        # Current state information
-        obs.extras['battery_soc'] = self.state.electrical.battery_soc
-        obs.extras['ev_soc'] = self.state.electrical.ev_soc
-        obs.extras['grid_power'] = self.state.electrical.grid_building
-
-        # Forecasts (simplified - replace with actual forecasting)
-        forecast_hours = 24
-        obs.outdoor_temp_forecast = [20.0] * forecast_hours
-        obs.solar_forecast = [0.0] * forecast_hours
-        obs.price_forecast = [0.1] * forecast_hours
-        obs.occupancy_forecast = [0.5] * forecast_hours
-
-        return obs
-
-    def _calculate_reward(self, module_outputs: Dict[str, Dict]) -> float:
-        """Calculate reward for this step.
-
-        Args:
-            module_outputs: Outputs from all modules
-
-        Returns:
-            Scalar reward value
-        """
-        reward = 0.0
-
-        # Get reward weights from config
-        opt_config = self.config.get('optimization', {})
-        objective = opt_config.get('objective', 'minimize_cost')
-
-        if objective == 'minimize_cost':
-            # Energy cost
-            price = self.disturbance.prices.electricity_price
-            grid_power = self.state.electrical.grid_building
-            energy_cost = -abs(grid_power) * price * (self.timestep / 3600)
-            reward += energy_cost
-
-        elif objective == 'minimize_carbon':
-            # Carbon emissions
-            carbon_intensity = self.disturbance.prices.carbon_intensity
-            grid_power = max(0, self.state.electrical.grid_building)  # Only imports
-            carbon_cost = -grid_power * carbon_intensity * (self.timestep / 3600) / 1000
-            reward += carbon_cost
-
-        elif objective == 'maximize_self_consumption':
-            # Self-consumption of renewable energy
-            if 'pv' in module_outputs:
-                pv_gen = module_outputs['pv'].get('generation', 0)
-                grid_export = min(0, self.state.electrical.grid_building)
-                self_consumption = pv_gen + grid_export  # Consumption = generation - export
-                reward += self_consumption * 0.1
-
-        # Add comfort penalty if available
-        if 'building' in module_outputs:
-            comfort_violation = module_outputs['building'].get('comfort_violation', 0)
-            reward -= comfort_violation * 10
-
-        return reward
-
-    def get_info(self) -> Dict[str, Any]:
-        """Get current environment information.
-
-        Returns:
-            Dictionary with environment status
-        """
-        return {
-            'current_step': self.current_step,
-            'max_steps': self.max_steps,
-            'timestep': self.timestep,
-            'episode_reward': self.episode_reward,
-            'modules': list(self.modules.keys()),
-            'done': self.done
-        }
-
-    def get_module(self, name: str) -> Optional[BaseModule]:
-        """Get a specific module instance.
-
-        Args:
-            name: Module name
-
-        Returns:
-            Module instance or None if not found
-        """
-        return self.modules.get(name)
-
-    def render(self, mode: str = 'human') -> Optional[Dict]:
-        """Render the environment state.
-
-        Args:
-            mode: Rendering mode ('human' for text, 'dict' for dictionary)
-
-        Returns:
-            State dictionary if mode='dict', None otherwise
-        """
-        if mode == 'human':
-            print(f"\n=== Step {self.current_step}/{self.max_steps} ===")
-            print(f"Time: {self.observation.time_of_day:.1f}:00")
-            print(f"Episode Reward: {self.episode_reward:.2f}")
-            print(f"Active Modules: {', '.join(self.modules.keys())}")
-
-            # Module states
-            if 'battery' in self.modules:
-                print(f"Battery SOC: {self.state.electrical.battery_soc:.1%}")
-            if 'ev' in self.modules:
-                print(f"EV SOC: {self.state.electrical.ev_soc:.1%}")
-            if 'pv' in self.modules:
-                print(f"PV Generation: {self.state.electrical.pv_building:.1f} kW")
-
-            print(f"Grid Power: {self.state.electrical.grid_building:.1f} kW")
-
-        elif mode == 'dict':
-            return self.state.to_dict()
-
-        return None
-
-    def close(self) -> None:
-        """Clean up resources."""
-        for name, module in self.modules.items():
-            if hasattr(module, 'close'):
-                module.close()
-                self.logger.debug(f"Closed module: {name}")
-
-        self.modules.clear()
-        self.logger.info("Environment closed")

@@ -15,6 +15,7 @@ from enum import Enum
 import numpy as np
 
 
+# Operation mode class
 class HVACMode(Enum):
     """HVAC operation modes."""
     OFF = "off"
@@ -48,33 +49,28 @@ class EVMode(Enum):
     DISCONNECT_IDLE = "disconnected_idle"
     DISCONNECT_DRIVING = "disconnected_driving"
 
+
 class GRIDMode(Enum):
     """Grid operation modes."""
     CONNECT = "connected"
     ISLAND = "island"
 
 
-# State Variables
+# Base component class
 @dataclass
-class ThermalState:
-    """State variables of thermal loop."""
-    # Building thermal zones
-    zone_temperatures: Dict[str, float] = field(default_factory=dict)  # °C
-
-    # HVAC system
-    # @TODO Depends on HVAC configuration
-
-    # Thermal storage
-    # @TODO
-
-    # Domestic hot water
-    # @TODO
+class ComponentState:
+    """Base class for all component states."""
+    component_id: str
+    component_type: str
+    domain: str  # 'electrical', 'thermal', 'water'
+    timestamp: float = 0.0
+    is_active: bool = True
 
 
+# Electric state variables @TODO the current variables include action variables as well, which need to be removed
 @dataclass
-class ElectricalState:
-    """State variables of electrical loop."""
-    # Battery
+class BatteryState(ComponentState):
+    """Battery storage component."""
     battery_soc: float = 0.5  # State of charge (0-1)
     battery_to_building: float = 0.0  # kW
     battery_to_grid: float = 0.0  # kW
@@ -84,7 +80,16 @@ class ElectricalState:
     battery_power_loss: float = 0.0  # kW
     battery_mode: BatteryMode = BatteryMode.IDLE
 
-    # Electric Vehicle
+    # @TODO Update later
+
+    def __post_init__(self):
+        self.domain = "electrical"
+        self.component_type = "battery"
+
+
+@dataclass
+class EVState(ComponentState):
+    """EV storage component."""
     ev_soc: float = 0.5  # State of charge
     ev_to_building: float = 0.0  # kW
     ev_to_battery: float = 0.0  # kW
@@ -92,51 +97,215 @@ class ElectricalState:
     ev_driving_loss: float = 0.0  # kW
     ev_mode: EVMode = EVMode.CONNECTED_CHARGING
 
-    # Grid
-    grid_building: float = 0.0  # kW
-    grid_battery: float = 0.0  # kW
-    grid_ev: float = 0.0  # kW
-    grid_mode: GRIDMode=GRIDMode.CONNECT
+    # @TODO Update later
 
-    # Renewable generation
+    def __post_init__(self):
+        self.domain = "electrical"
+        self.component_type = "ev"
+
+
+@dataclass
+class PVState(ComponentState):
+    """Photovoltaic generation component."""
     pv_building: float = 0.0  # kW
     pv_battery: float = 0.0  # kW
     pv_grid: float = 0.0  # kW
     pv_ev: float = 0.0  # kW
-    # @TODO Add more modules like WT
 
-    # Building load breakdown
+    def __post_init__(self):
+        self.domain = "electrical"
+        self.component_type = "pv"
+
+
+@dataclass
+class BLDGEState(ComponentState):
+    """Building load demand component."""
     hvac_power: float = 0.0  # kW
     lighting_power: float = 0.0  # kW
     plug_loads_power: float = 0.0  # kW
 
+    def __post_init__(self):
+        self.domain = "electrical"
+        self.component_type = "bldg_e"  # E stands for electrical
+
+
+# Thermal state variables
+@dataclass
+class BLDGTState(ComponentState):
+    """Thermal zone component."""
+    temperature: float = 22.0  # °C
+    humidity: float = 50.0  # %
+    internal_heat_gain: float = 0.0  # kW
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "bldg_t"  # T stands for thermal
+
 
 @dataclass
-# @TODO
-class WaterState:
-    pass
+class TESState(ComponentState):
+    """Thermal zone component."""
+    temperature: float = 22.0  # °C
+    tes_soc: float = 0.5  # State of charge (0-1)
+    tes_mode: TESMode = TESMode.IDLE
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "tes"  # T stands for thermal
 
 
 @dataclass
-class State:
-    """Complete system state combining thermal, electrical and water loops."""
-    thermal: ThermalState = field(default_factory=ThermalState)
-    electrical: ElectricalState = field(default_factory=ElectricalState)
-    water: WaterState = field(default_factory=WaterState)
+class HVACState(ComponentState):
+    """HVAC component."""
+    thermal_load: float = 0.0  # kW
 
-    # Simulation metadata
-    resolution: float = 15 * 60  # in second
-    step: int = 0  # simulation steps
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "hvac"
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert state to dictionary for logging/saving."""
-        return {
-            'thermal': self.thermal.__dict__,
-            'electrical': self.electrical.__dict__,
-            'water': self.water.__dict__,
-            'resolution': self.resolution,
-            'step': self.step
-        }
+# Water state variables
+@dataclass
+class WaterHeaterState(ComponentState):
+    """Water heating component."""
+    tank_temperature: float = 60.0  # °C
+    energy_content: float = 0.0  # kWh
+
+    def __post_init__(self):
+        self.domain = "water"
+        self.component_type = "water_heater"
+
+
+# Domain-Level State Aggregation
+@dataclass
+class ElectricalDomainState:
+    """Aggregated electrical domain state for a building."""
+    # Component collections
+    batteries: Dict[str, BatteryState] = field(default_factory=dict)
+    evs: Dict[str, EVState] = field(default_factory=dict)
+    pv_systems: Dict[str, PVState] = field(default_factory=dict)
+    bldg_e_loads: Dict[str, BLDGEState] = field(default_factory=dict)
+
+    # Domain-level aggregations
+    total_generation: float = 0.0  # kW
+    total_demand: float = 0.0  # kW
+    grid_import: float = 0.0 # kw
+    grid_export: float = 0.0  # kw
+    # @TODO
+
+    def update_aggregations(self):
+        """Update domain-level aggregated values."""
+        # @TODO
+        # self.total_generation = sum()
+        # self.total_demand = sum()
+
+
+@dataclass
+class ThermalDomainState:
+    """Aggregated thermal domain state for a building."""
+    # Component collections
+    hvac_systems: Dict[str, HVACState] = field(default_factory=dict)
+    thermal_zones: Dict[str, BLDGTState] = field(default_factory=dict)
+    thermal_storage: Dict[str, TESState] = field(default_factory=dict)
+
+    # Domain-level aggregations
+    total_heating_load: float = 0.0  # kW
+    total_cooling_load: float = 0.0  # kW
+    # @TODO
+
+    def update_aggregations(self):
+        """Update thermal domain aggregations."""
+        # @TODO
+        # self.total_heating_load = sum()
+        # self.total_cooling_load = sum()
+
+
+@dataclass
+class WaterDomainState:
+    """Aggregated water domain state for a building."""
+    # Component collections
+    water_heaters: Dict[str, WaterHeaterState] = field(default_factory=dict)
+
+    # Domain-level aggregations
+    total_water_heating_power: float = 0.0  # kW
+    # @TODO
+
+    def update_aggregations(self):
+        """Update water domain aggregations."""
+        # @TODO
+        # self.total_water_heating_power = sum()
+
+
+# Building-Level State Aggregation
+@dataclass
+class BuildingState:
+    """Complete building state organized by physical domains."""
+    building_id: str
+
+    # Domain states (your original approach)
+    electrical: ElectricalDomainState = field(default_factory=ElectricalDomainState)
+    thermal: ThermalDomainState = field(default_factory=ThermalDomainState)
+    water: WaterDomainState = field(default_factory=WaterDomainState)
+
+    # Building-level aggregations
+    # @TODO variables defined later
+    total_electrical_load: float = 0.0  # kW
+    total_thermal_load: float = 0.0  # kW
+    net_energy_flow: float = 0.0  # kW
+
+    def update_all_aggregations(self):
+        """Update all domain and building-level aggregations."""
+        self.electrical.update_aggregations()
+        self.thermal.update_aggregations()
+        self.water.update_aggregations()
+        # @TODO
+
+        # Building-level aggregations
+        # @TODO
+        # self.total_electrical_load =
+        # self.total_thermal_load =
+        # self.net_energy_flow =
+
+    def get_component_by_id(self, component_id: str) -> Optional[ComponentState]:
+        """Get any component by ID across all domains."""
+        # @TODO the searching domain is not complete yet
+        # Search electrical domain
+        for components in [self.electrical.batteries, self.electrical.pv_systems, self.electrical.bldg_e_loads]:
+            if component_id in components:
+                return components[component_id]
+
+        # Search thermal domain
+        for components in [self.thermal.hvac_systems, self.thermal.thermal_zones, self.thermal.thermal_storage]:
+            if component_id in components:
+                return components[component_id]
+
+        # Search water domain
+        for components in [self.water.water_heaters]:
+            if component_id in components:
+                return components[component_id]
+
+        return None
+
+    def get_components_by_domain(self, domain: str) -> Dict[str, ComponentState]:
+        """Get all components in a specific domain."""
+        # @TODO not complete yet
+        if domain == "electrical":
+            result = {}
+            result.update(self.electrical.batteries)
+            result.update(self.electrical.pv_systems)
+            result.update(self.electrical.bldg_e_loads)
+            return result
+        elif domain == "thermal":
+            result = {}
+            result.update(self.thermal.hvac_systems)
+            result.update(self.thermal.thermal_zones)
+            result.update(self.thermal.thermal_storage)
+            return result
+        elif domain == "water":
+            result = {}
+            result.update(self.water.water_heaters)
+            return result
+        return {}
+
 
 
 # Action Variables
@@ -375,4 +544,3 @@ class Configuration:
     battery: BatteryConfig = field(default_factory=BatteryConfig)
     ev: EVConfig = field(default_factory=EVConfig)
     pv: PVConfig = field(default_factory=PVConfig)
-
