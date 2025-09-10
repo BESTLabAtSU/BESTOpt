@@ -35,8 +35,8 @@ class ConfigurationManager:
         self.selected_environment: Dict[str, Any] = {}
         self.selected_grid: Dict[str, Any] = {}
         # Track active controllers per building
-        self.active_controllers: Dict[str, str] = {}  # building_id -> controller_name
-
+        self.active_controllers: Dict[str, Dict[str, str]] = {}  # building_id -> {domain -> controller_name}
+        # Example: {"building_1": {"electrical": "mpc_elec", "thermal": "rule_thermal"}}
         self.logger.info(f"Loaded configuration from {json_file_path}")
 
     # Building management
@@ -69,7 +69,11 @@ class ConfigurationManager:
     def deselect_building(self, building_id: str) -> None:
         """Remove a building from selection."""
         self.selected_buildings.pop(building_id, None)
-        self.active_controllers.pop(building_id, None)
+        if building_id in self.active_controllers:
+            for domain in list(self.active_controllers[building_id].keys()):
+                controller_key = self.active_controllers[building_id][domain]
+                self.selected_controllers.pop(controller_key, None)
+            self.active_controllers.pop(building_id, None)
         self.logger.info(f"Deselected building: {building_id}")
 
     # Component management
@@ -173,8 +177,11 @@ class ConfigurationManager:
         """Get controller configuration info."""
         return self.config.get('controllers', {}).get(controller_name, {})
 
-    def select_controller_for_building(self, building_id: str, controller_name: str) -> None:
-        """Assign a controller to a specific building."""
+    def select_controller_for_building_domain(self,
+                                              building_id: str,
+                                              domain: str,  # "electrical", "thermal", "water"
+                                              controller_name: str) -> None:
+        """Assign a controller to a specific domain of a building."""
         if building_id not in self.selected_buildings:
             self.logger.warning(f"Building {building_id} not selected")
             return
@@ -183,28 +190,47 @@ class ConfigurationManager:
             self.logger.warning(f"Controller {controller_name} not available")
             return
 
-        # Create controller instance for this building
+        # Initialize building's controller dict
+        if building_id not in self.active_controllers:
+            self.active_controllers[building_id] = {}
+
+        # Create controller instance for this building-domain pair
         controller_config = self._deep_copy_dict(self.config['controllers'][controller_name])
-        controller_key = f"{building_id}_{controller_name}"
+        controller_key = f"{building_id}_{domain}_{controller_name}"
 
         self.selected_controllers[controller_key] = controller_config
-        self.active_controllers[building_id] = controller_key
+        self.active_controllers[building_id][domain] = controller_key
 
-        self.logger.info(f"Assigned controller {controller_name} to building {building_id}")
+        self.logger.info(f"Assigned {controller_name} to {building_id}.{domain}")
 
-    def adjust_building_controller_parameter(self, building_id: str, param_name: str, value: Any) -> None:
-        """Adjust controller parameter for a specific building."""
+    def adjust_building_controller_parameter(self,
+                                             building_id: str,
+                                             domain: str,
+                                             param_name: str,
+                                             value: Any) -> None:
+        """Adjust controller parameter for a specific building's domain.
+
+        Args:
+            building_id: ID of the building
+            domain: One of 'electrical', 'thermal', or 'water'
+            param_name: Parameter name to adjust
+            value: New parameter value
+        """
         if building_id not in self.active_controllers:
-            self.logger.warning(f"No active controller for building {building_id}")
+            self.logger.warning(f"No controllers for building {building_id}")
             return
 
-        controller_key = self.active_controllers[building_id]
+        if domain not in self.active_controllers[building_id]:
+            self.logger.warning(f"No {domain} controller for building {building_id}")
+            return
+
+        controller_key = self.active_controllers[building_id][domain]
         if controller_key not in self.selected_controllers:
             self.logger.warning(f"Controller {controller_key} not found")
             return
 
         self.selected_controllers[controller_key].setdefault('parameters', {})[param_name] = value
-        self.logger.info(f"Updated controller for {building_id}: {param_name} = {value}")
+        self.logger.info(f"Updated {domain} controller for {building_id}: {param_name} = {value}")
 
     def add_controller(self, controller_name: str,
                        *, parameters: Optional[Dict[str, Any]] = None,
@@ -363,14 +389,27 @@ class ConfigurationManager:
         if not self.selected_buildings:
             warnings.append("No buildings selected")
 
-        # Check that each building has required components
+        # Check that each building has required components and controllers
         for building_id, building_config in self.selected_buildings.items():
-            # Check for controllers
+
+            # Check for domain controllers
             if building_id not in self.active_controllers:
-                warnings.append(f"Building {building_id} has no assigned controller")
+                warnings.append(f"Building {building_id} has no assigned controllers")
+            else:
+                building_controllers = self.active_controllers[building_id]
+
+                # Check each required domain has a controller
+                required_domains = []  # TODO Add required domains like ['electrical', 'thermal']
+                for domain in required_domains:
+                    if domain not in building_controllers:
+                        warnings.append(f"Building {building_id} missing {domain} controller")
+
+                # Warn if NO controllers at all
+                if not building_controllers:
+                    warnings.append(f"Building {building_id} has controller mapping but no domains assigned")
 
             # Check component configurations
-            for component_type in ['batteries', 'pv_systems', 'hvac_systems']:  # @TODO add more later
+            for component_type in ['batteries', 'pv_systems', 'hvac_systems']:
                 components = building_config.get(component_type, {})
                 for comp_id, comp_config in components.items():
                     if 'class_path' not in comp_config:
@@ -392,13 +431,22 @@ class ConfigurationManager:
         for building_id, building_config in self.selected_buildings.items():
             print(f"\n  Building: {building_id}")
 
-            # Show controller
+            # Show domain controllers
             if building_id in self.active_controllers:
-                controller_key = self.active_controllers[building_id]
-                print(f"    Controller: {controller_key}")
+                building_controllers = self.active_controllers[building_id]
+                if building_controllers:
+                    print(f"    Controllers:")
+                    for domain, controller_key in building_controllers.items():
+                        # Extract controller name from key (format: building_domain_name)
+                        controller_name = controller_key.replace(f"{building_id}_{domain}_", "")
+                        print(f"      - {domain}: {controller_name}")
+                else:
+                    print(f"    Controllers: None assigned")
+            else:
+                print(f"    Controllers: None assigned")
 
             # Show components
-            for component_type in ['batteries', 'pv_systems', 'hvac_systems', 'thermal_zones']:  # @TODO add more later
+            for component_type in ['batteries', 'pv_systems', 'hvac_systems', 'thermal_zones']:
                 components = building_config.get(component_type, {})
                 if components:
                     print(f"    {component_type}: {list(components.keys())}")

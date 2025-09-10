@@ -24,7 +24,7 @@ building_simulation/
 │   │   └── thermal_storage.py
 │   ├── building/
 │   │   ├── __init__.py
-│   │   └── dynamics.py
+│   │   └── dynamic.py
 │   └── appliance/
 │       ├── __init__.py
 │       └── appliance.py
@@ -184,7 +184,7 @@ class ElectricLoop:
             return {'grid_import': total_demand - total_generation, 'grid_export': 0}
 
 
-# runtime/building/dynamics.py
+# runtime/building/dynamic.py
 class BuildingDynamics(DynamicModule):
     """Building thermal dynamics module."""
 

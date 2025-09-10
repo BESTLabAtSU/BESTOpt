@@ -13,7 +13,7 @@ and state history recording.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 import logging
-from .data_structure import (State, Action, Disturbance, SimulationConfig)
+from .data_structure import (State, Action, Disturbance, Configuration)
 
 
 class BaseModule(ABC):

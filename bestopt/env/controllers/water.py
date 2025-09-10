@@ -1,19 +1,18 @@
 """
-PV module.
+Water controller.
 """
 
 import numpy as np
 from typing import Dict, Any, Optional, Tuple
-from enum import Enum
 import logging
 
-from ...core.base import BaseModule
-from ...core.data_structure import State, Action, Disturbance
+from ..core.base import BaseModule
+from ..core.data_structure import State, Action, Disturbance
 
 
-class PVModule(BaseModule):
+class RuleBased(BaseModule):
     """
-    PV energy storage model.
+    RuleBased Controller.
 
     Features:
     # @TODO
@@ -22,12 +21,12 @@ class PVModule(BaseModule):
     -
     """
 
-    def __init__(self, config: Dict[str, Any], name: str = "PV"):
+    def __init__(self, config: Dict[str, Any], name: str = "RB"):
         """
-        Initialize pv module.
+        Initialize RuleBased Controller.
 
         Args:
-            config: PV configuration parameters
+            config: RuleBased Controller configuration parameters
             name: Module name
         """
         super().__init__(config, name)

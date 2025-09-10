@@ -14,7 +14,7 @@ It covers:
 
 import logging
 from bestopt.env.core.config_manager import ConfigurationManager
-from bestopt.env.core.data_structure import BatteryConfig, PVConfig, HVACConfig
+from bestopt.env.core.data_structure import BatteryConfig
 
 # ------------------------------------------------------------------------------
 # 0) Logging enabled so users can see what's happening
@@ -44,80 +44,83 @@ cm.add_building_component(
     component_id="main_battery",
     dataclass_obj=BatteryConfig(battery_capacity=100.0, battery_c_rate=0.5),
     parameters={"battery_soc_min": 0.2},  # override a few fields
-    class_path="bestopt.modules.battery.Battery"
+    class_path="bestopt.env.modules.ders.battery.BatteryModule"
 )
 
 # Example B: PV defined purely via parameters (no dataclass seed)
 cm.add_building_component(
     "office_building_1", "pv_systems", "rooftop_pv",
     parameters={"pv_capacity": 50.0, "efficiency": 0.22, "tilt_angle": 30},
-    class_path="bestopt.modules.pv.PVSystem"
+    class_path="bestopt.env.modules.ders.pv.PVModule"
 )
 
 # Example C: Central HVAC via parameters
 cm.add_building_component(
-    "office_building_1", "hvac_systems", "central_hvac",
+    "office_building_1", "hvac_systems", "ideaHVAC",
     parameters={"cooling_capacity": 80.0, "heating_capacity": 60.0, "cop_cooling": 3.5},
-    class_path="bestopt.modules.hvac.CentralHVAC"
+    class_path="bestopt.env.modules.hvac.ideal.HVACModule"
 )
 
 # Example D: A thermal zone (geometry/thermal mass info)
 cm.add_building_component(
     "office_building_1", "thermal_zones", "main_zone",
     parameters={"floor_area": 1000.0, "volume": 3000.0, "thermal_mass": 50000.0},
-    class_path="bestopt.modules.thermal.ThermalZone"
+    class_path="bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
 )
 
 # --- Office Building 2 (multiple batteries & PV arrays) ------------------------
 cm.add_building_component(
     "office_building_2", "batteries", "battery_bank_1",
     parameters={"battery_capacity": 150.0, "battery_c_rate": 0.33},
-    class_path="bestopt.modules.battery.Battery"
+    class_path="bestopt.env.modules.ders.battery.BatteryModule"
 )
 cm.add_building_component(
     "office_building_2", "batteries", "battery_bank_2",
     parameters={"battery_capacity": 150.0, "battery_c_rate": 0.33},
-    class_path="bestopt.modules.battery.Battery"
+    class_path="bestopt.env.modules.ders.battery.BatteryModule"
 )
 cm.add_building_component(
     "office_building_2", "pv_systems", "south_array",
     parameters={"pv_capacity": 75.0, "efficiency": 0.21, "azimuth": 180},
-    class_path="bestopt.modules.pv.PVSystem"
+    class_path="bestopt.env.modules.ders.pv.PVModule"
 )
 cm.add_building_component(
     "office_building_2", "pv_systems", "east_array",
     parameters={"pv_capacity": 40.0, "efficiency": 0.20, "azimuth": 90},
-    class_path="bestopt.modules.pv.PVSystem"
-)
-cm.add_building_component(
-    "office_building_2", "hvac_systems", "vrf_system",
-    parameters={"total_capacity": 120.0, "number_of_zones": 6, "cop_cooling": 4.0},
-    class_path="bestopt.modules.hvac.VRFSystem"
+    class_path="bestopt.env.modules.ders.pv.PVModule"
 )
 
 # ------------------------------------------------------------------------------
-# 3) Add controllers (you can define multiple and pick per-building later)
-#    Pattern: add_controller(controller_name, parameters, class_path)
+# 3) Add controllers (building-domain-controllers)
 # ------------------------------------------------------------------------------
+# One controller for one domain per building
 cm.add_controller(
-    "mpc_controller",
+    "electrical_rb",
     parameters={
+        "domain": "electrical",
         "prediction_horizon": 24,
-        "control_horizon": 6,
-        "dt_minutes": 15,
-        "objective_weights": {"cost": 1.0, "comfort": 0.8}
+        "objectives": ["cost_minimization", "peak_shaving"]
     },
-    class_path="bestopt.controllers.mpc.MPCController"
+    class_path="bestopt.controllers.electrical.RuleBased"
 )
 
 cm.add_controller(
-    "rule_based_controller",
+    "thermal_rb",
     parameters={
-        "battery_soc_high_threshold": 0.8,
-        "battery_soc_low_threshold": 0.2,
-        "peak_hours": [16, 17, 18, 19, 20]
+        "domain": "thermal",
+        "prediction_horizon": 12,
+        "comfort_bounds": {"min": 20, "max": 24}
     },
-    class_path="bestopt.controllers.rule_based.RuleBasedController"
+    class_path="bestopt.controllers.thermal.RuleBased"
+)
+
+cm.add_controller(
+    "water_rb",
+    parameters={
+        "domain": "water",
+        "tank_temp_range": [55, 65]
+    },
+    class_path="bestopt.controllers.water.RuleBased"
 )
 
 # ------------------------------------------------------------------------------
@@ -131,7 +134,7 @@ cm.add_disturbance(
         "file_path": "/data/weather/syracuse_ny.epw",
         "interpolation_method": "linear"
     },
-    class_path="bestopt.disturbances.weather.WeatherDisturbance"
+    class_path="bestopt.env.disturbances.weather.WeatherModule"
 )
 
 cm.add_disturbance(
@@ -143,7 +146,7 @@ cm.add_disturbance(
         "peak_hours": [16, 17, 18, 19, 20],
         "demand_charge": 15.0
     },
-    class_path="bestopt.disturbances.pricing.ElectricityPricing"
+    class_path="bestopt.env.disturbances.price.PriceModule"
 )
 
 # ------------------------------------------------------------------------------
@@ -167,7 +170,7 @@ cm.add_grid(
         "max_export_capacity": 1500.0,
         "enable_islanding": False
     },
-    class_path="bestopt.modules.grid.DistributionGrid"
+    class_path="bestopt.env.modules.grid.DistributionGrid"
 )
 
 print("✓ Added environment and grid")
@@ -184,8 +187,13 @@ print("\nConfiguring simulation...")
 cm.select_buildings(["office_building_1", "office_building_2"])
 
 # Assign controllers (per-building selection)
-cm.select_controller_for_building("office_building_1", "mpc_controller")
-cm.select_controller_for_building("office_building_2", "rule_based_controller")
+cm.select_controller_for_building_domain("office_building_1", "electrical", "electrical_rb")
+cm.select_controller_for_building_domain("office_building_1", "thermal", "thermal_rb")
+cm.select_controller_for_building_domain("office_building_1", "water", "water_rb")
+
+cm.select_controller_for_building_domain("office_building_2", "electrical", "electrical_rb")
+cm.select_controller_for_building_domain("office_building_2", "thermal", "thermal_rb")
+cm.select_controller_for_building_domain("office_building_2", "water", "water_rb")
 
 # Select disturbances and global elements
 cm.select_disturbances(["weather", "electricity_prices"])
@@ -199,7 +207,8 @@ cm.select_grid()
 cm.adjust_building_component_parameter( "office_building_1", "batteries",
                                         "main_battery", "battery_capacity", 120.0)
 
-cm.adjust_building_controller_parameter("office_building_1", "prediction_horizon", 36)
+cm.adjust_building_controller_parameter("office_building_1", "electrical",
+                                        "prediction_horizon", 36)
 
 print("✓ Configured simulation settings")
 
@@ -217,5 +226,5 @@ cm.print_summary()
 # ------------------------------------------------------------------------------
 # 9) Save the final selected configuration for this scenario
 # ------------------------------------------------------------------------------
-cm.save_final_configuration("simulation_config.json")
+cm.save_final_configuration("config_setup.json")
 print("✓ Saved simulation configuration as simulation_config.json")

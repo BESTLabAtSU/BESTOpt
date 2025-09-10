@@ -163,6 +163,7 @@ class HVACState(ComponentState):
         self.domain = "thermal"
         self.component_type = "hvac"
 
+
 # Water state variables
 @dataclass
 class WaterHeaterState(ComponentState):
@@ -188,8 +189,9 @@ class ElectricalDomainState:
     # Domain-level aggregations
     total_generation: float = 0.0  # kW
     total_demand: float = 0.0  # kW
-    grid_import: float = 0.0 # kw
+    grid_import: float = 0.0  # kw
     grid_export: float = 0.0  # kw
+
     # @TODO
 
     def update_aggregations(self):
@@ -210,6 +212,7 @@ class ThermalDomainState:
     # Domain-level aggregations
     total_heating_load: float = 0.0  # kW
     total_cooling_load: float = 0.0  # kW
+
     # @TODO
 
     def update_aggregations(self):
@@ -227,6 +230,7 @@ class WaterDomainState:
 
     # Domain-level aggregations
     total_water_heating_power: float = 0.0  # kW
+
     # @TODO
 
     def update_aggregations(self):
@@ -237,7 +241,7 @@ class WaterDomainState:
 
 # Building-Level State Aggregation
 @dataclass
-class BuildingState:
+class State:
     """Complete building state organized by physical domains."""
     building_id: str
 
@@ -307,7 +311,6 @@ class BuildingState:
         return {}
 
 
-
 # Action Variables
 @dataclass
 class ThermalAction:
@@ -327,16 +330,27 @@ class ElectricalAction:
 
 
 @dataclass
+class WaterAction:
+    """Water control actions."""
+    pass
+    # @TODO Battery control
+    # @TODO PV control
+    # @TODO EV control
+
+
+@dataclass
 class Action:
-    """Complete control action combining thermal and electrical domains."""
+    """Complete control action combining thermal, electrical and water domains."""
     thermal: ThermalAction = field(default_factory=ThermalAction)
     electrical: ElectricalAction = field(default_factory=ElectricalAction)
+    water: WaterAction = field(default_factory=WaterAction)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert action to dictionary."""
         return {
             'thermal': self.thermal.__dict__,
-            'electrical': self.electrical.__dict__
+            'electrical': self.electrical.__dict__,
+            'water': self.water.__dict__
         }
 
 
