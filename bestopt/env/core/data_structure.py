@@ -571,8 +571,8 @@ class Configuration:
 class FanState(ComponentState):
     """Standalone; not aggregated into ThermalDomainState for now."""
     airflow_m3s: float = 0.0
-    power_kw: float = 0.0
-    energy_kwh_cum: float = 0.0  # accumulated electrical energy [kWh]
+    power_W: float = 0.0
+    energy_J_cum: float = 0.0  # accumulated electrical energy [kWh]
 
     def __post_init__(self):
         # identify this component; keep it consistent with your taxonomy

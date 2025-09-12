@@ -4,9 +4,6 @@ from bestopt.env.core.data_structure import CoilState, Disturbance
 # Config: pick an effectiveness (0..1) and default properties
 cfg = {
     "effectiveness": 0.9,
-    # optional overrides:
-    # "rho_air": 1.2, "cp_air_kJkgK": 1.005,
-    # "rho_water": 997.0, "cp_water_kJkgK": 4.186,
     "enable_history": True,
 }
 coil = CoilModule(cfg, name="cooling_coil")
@@ -14,10 +11,10 @@ coil.initialize()
 
 # Build a CoilState; set flows and inlet temperatures (constants for this test)
 cs = CoilState(component_id="CC-1", component_type="", domain="")
-cs.airflow_m3s = 1.2       # m^3/s (air)
-cs.waterflow_m3s = 0.01    # m^3/s (water) ~ 10 L/s
-cs.air_inlet_temp_C = 30.0 # °C
-cs.water_inlet_temp_C = 7.0# °C chilled water
+cs.airflow_m3s = 1.2        # m^3/s (air)
+cs.waterflow_m3s = 0.01     # m^3/s (water) ~ 10 L/s
+cs.air_inlet_temp_C = 30.0  # °C
+cs.water_inlet_temp_C = 7.0 # °C chilled water
 
 # One step (15 min); action is unused so we pass None
 dt = 900  # s
