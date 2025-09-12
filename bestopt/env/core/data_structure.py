@@ -315,6 +315,8 @@ class State:
 @dataclass
 class ThermalAction:
     """Thermal control actions."""
+
+    pump_flow: float = 0.0               # m³/s water flow for circulation    
     pass
     # @TODO HVAC controls
     # @TODO Thermal storage control
