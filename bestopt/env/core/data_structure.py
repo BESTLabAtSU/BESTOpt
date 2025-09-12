@@ -317,8 +317,8 @@ class ThermalAction:
     """Thermal control actions."""
 
     pump_flow: float = 0.0               # m³/s water flow for circulation    
-    
-    fan_flow_sp: Optional[float] = None
+
+    supplyfan_flow_sp: Optional[float] = None
 
     pass
     # @TODO HVAC controls
@@ -570,7 +570,7 @@ class Configuration:
 @dataclass
 class FanState(ComponentState):
     """Standalone fan state; not aggregated into ThermalDomainState for now."""
-    flow_m3s: float = 0.0
+    airflow_m3s: float = 0.0
     power_kw: float = 0.0
     energy_kwh_cum: float = 0.0  # accumulated electrical energy [kWh]
 
@@ -580,3 +580,15 @@ class FanState(ComponentState):
         self.component_type = "fan"
 
 
+
+@dataclass
+class CoilState(ComponentState):
+    """Standalone fan state; not aggregated into ThermalDomainState for now."""
+    flow_m3s: float = 0.0
+    power_kw: float = 0.0
+    energy_kwh_cum: float = 0.0  # accumulated electrical energy [kWh]
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with your taxonomy
+        self.domain = "thermal"
+        self.component_type = "fan"

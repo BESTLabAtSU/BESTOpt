@@ -72,7 +72,7 @@ class FanModule(BaseModule):
         energy_kwh = power_kw * (timestep / 3600.0) if timestep and timestep > 0.0 else 0.0
 
         # 4) in-place update
-        state.flow_m3s = flow
+        state.airflow_m3s = flow
         state.power_kw = power_kw
         state.energy_kwh_cum += energy_kwh
 
