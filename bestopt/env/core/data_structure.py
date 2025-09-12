@@ -569,7 +569,7 @@ class Configuration:
 
 @dataclass
 class FanState(ComponentState):
-    """Standalone fan state; not aggregated into ThermalDomainState for now."""
+    """Standalone; not aggregated into ThermalDomainState for now."""
     airflow_m3s: float = 0.0
     power_kw: float = 0.0
     energy_kwh_cum: float = 0.0  # accumulated electrical energy [kWh]
@@ -583,12 +583,15 @@ class FanState(ComponentState):
 
 @dataclass
 class CoilState(ComponentState):
-    """Standalone fan state; not aggregated into ThermalDomainState for now."""
-    flow_m3s: float = 0.0
-    power_kw: float = 0.0
-    energy_kwh_cum: float = 0.0  # accumulated electrical energy [kWh]
+    """Standalone; not aggregated into ThermalDomainState for now."""
+    airflow_m3s: float = 0.0
+    waterflow_m3s: float = 0.0
+    air_inlet_temp_C: float = 0.0
+    air_outlet_temp_C: float = 0.0
+    water_inlet_temp_C: float = 0.0
+    water_outlet_temp_C: float = 0.0
 
     def __post_init__(self):
         # identify this component; keep it consistent with your taxonomy
         self.domain = "thermal"
-        self.component_type = "fan"
+        self.component_type = "coil"

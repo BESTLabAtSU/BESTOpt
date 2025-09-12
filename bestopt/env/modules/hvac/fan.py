@@ -11,14 +11,28 @@ class FanModule(BaseModule):
     Supply fan module that CONSUMES an airflow setpoint and UPDATES a FanState in place.
 
     Input (from action): ThermalAction.supplyfan_flow_sp  [m^3/s]
-    Output (written in-place to FanState):
-      - state.flow_m3s
-      - state.power_kw
-      - state.energy_kwh_cum  (accumulated over steps)
 
-    Power model (fan affinity law):
-        P = P_rated * (Q / Q_rated) ** exponent
-    Default exponent = 3.0 (cube law). Rated parameters come from config.
+    Output (written in-place to FanState):
+    - state.flow_m3s
+    - state.power_kw
+    - state.energy_kwh_cum  (accumulated over steps)
+
+    Model
+    - Fan affinity law:  P = P_rated * (Q / Q_rated)^exponent
+    - Config keys:
+        * rated_flow_m3s  (or rated_flow)  Q_rated [m^3/s]
+        * rated_power_kw                   P at Q_rated [kW]
+        * power_exponent (default 3.0)     cube-law exponent
+
+    State
+    - Expects a FanState instance passed as `state`.
+        * state.airflow_m3s     : echoed airflow [m^3/s]
+        * state.power_kw        : electric power via affinity law [kW]
+        * state.energy_kwh_cum  : accumulated energy over steps [kWh]
+
+    Action
+        * ThermalAction.supplyfan_flow_sp
+
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "supply_fan"):
