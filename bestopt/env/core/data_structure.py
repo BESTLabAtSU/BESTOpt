@@ -316,7 +316,7 @@ class State:
 class ThermalAction:
     """Thermal control actions."""
 
-    pump_flow: float = 0.0               # m³/s water flow for circulation    
+    pump_flow_sp: float = 0.0               # m³/s water flow for circulation    
 
     supplyfan_flow_sp: Optional[float] = None
 
@@ -565,7 +565,17 @@ class Configuration:
     pv: PVConfig = field(default_factory=PVConfig)
 
 
+@dataclass
+class PumpState(ComponentState):
+    """Standalone; not aggregated into ThermalDomainState for now."""
+    waterflow_m3s: float = 0.0
+    power_W: float = 0.0
+    energy_J_cum: float = 0.0  # accumulated electrical energy [kWh]
 
+    def __post_init__(self):
+        # identify this component; keep it consistent with your taxonomy
+        self.domain = "thermal"
+        self.component_type = "pump"
 
 @dataclass
 class FanState(ComponentState):

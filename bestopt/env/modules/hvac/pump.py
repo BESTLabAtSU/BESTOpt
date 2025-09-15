@@ -1,73 +1,100 @@
 """
 Pump module.
-
-Since actual pump head is generally unknown, pump power is modeled proportional to the cube of the flow ratio: pump power ∝ (flow/nominal flow)³
 """
 
-import numpy as np
-from typing import Dict, Any, Optional, Tuple
-from enum import Enum
-import logging
-
+from typing import Dict, Any
 from ...core.base import BaseModule
-from ...core.data_structure import State, Action, Disturbance, HVACMode
-
+from ...core.data_structure import ThermalAction, PumpState, Action, Disturbance  
 
 class PumpModule(BaseModule):
     """
-    Pump model for closed-loop HVAC water systems.
+    Pump module that CONSUMES an waterflow setpoint and UPDATES a WaterState in place.
 
-    Assumptions:
-    - Pump power scales with the cube of flow ratio.
-    - Nominal power and flow are provided in config.
-    
-    Assumptions:
-    - Pump power scales with cube of flow ratio (affinity law).
-    - Flow is provided in the Action or falls back to nominal flow.
+    Input (from action): ThermalAction.pump_flow_sp  [m^3/s]
+
+    Output (written in-place to FanState):
+    - state.flow_m3s
+    - state.power_W
+    - state.energy_J_cum  (accumulated over steps)
+
+    Model
+    - Fan affinity law:  P = P_rated * (Q / Q_rated)^exponent
+    - Config keys:
+        * rated_flow_m3s  (or rated_flow)  Q_rated [m^3/s]
+        * rated_power_W                   P at Q_rated [W]
+        * power_exponent (default 3.0)     cube-law exponent
+
+    State
+    - Expects a FanState instance passed as `state`.
+        * state.waterflow_m3s     : echoed waterflow [m^3/s]
+        * state.power_W        : electric power via affinity law [W]
+        * state.energy_J_cum  : accumulated energy over steps [W]
+
+    Action
+        No action.
 
     """
 
-    def __init__(self, config: Dict[str, Any], name: str = "Pump"):
-        """
-        Initialize Pump module.
-
-        Args:
-            config: Pump configuration parameters
-            name: Module name
-        """
+    def __init__(self, config: Dict[str, Any], name: str = "pump"):
         super().__init__(config, name)
-        self.nominal_flow = config.get("nominal_flow", 1.0)     # m³/s (or consistent unit)
-        self.nominal_power = config.get("nominal_power", 1.0)   # Watts (W)
-        self.logger = logging.getLogger(f"{__name__}.{name}")
+        q_rated = config.get("rated_flow_m3s", config.get("rated_flow", 1.0))
+        self.rated_flow_m3s: float = float(q_rated)                 
+        self.rated_power_W:  float = float(config.get("rated_power_W", 1000.0)) 
+        self.power_exponent: float = float(config.get("power_exponent", 3.0))    
+
+        if self.rated_flow_m3s <= 0.0:
+            self.logger.warning(f"{self.name}: rated_flow_m3s <= 0, power will be forced to 0.")
 
     def initialize(self) -> None:
-        self.energy_total = 0.0  # cumulative J
+        self._initialized = True
 
-    def step(self, state: State, action: Action,
-            disturbance: Disturbance, timestep: float) -> Dict[str, Any]:
-        # Get flow from action, fallback to nominal
-        flow = getattr(action.thermal, "pump_flow", self.nominal_flow)
-        # flow = max(0.0, flow)  # avoid negatives
-
-        if self.nominal_flow <= 0:
-            self.logger.warning("Nominal flow <= 0, cannot compute pump power.")
-            power = 0.0
-            flow_ratio = 0.0
-        else:
-            flow_ratio = flow / self.nominal_flow
-            power = self.nominal_power * (flow_ratio ** 3) 
-
-        # Energy in this step (J)
-        energy_step = power * timestep
-        self.energy_total += energy_step
-
-        return {
-            "pump_power": power,
-            "pump_energy_step": energy_step,
-            "pump_energy_total": self.energy_total,
-            "pump_flow": flow,
-            "pump_flow_ratio": flow_ratio
-        }
+    def step(
+        self,
+        state: "PumpState",
+        action: Any, 
+        disturbance: "Disturbance",
+        timestep: float
+    ) -> Dict[str, Any]:
+        """
+        One step (SI):
+        - read waterflow setpoint [m^3/s]
+        - compute power [W] via affinity law
+        - accumulate step energy [J] = W * s
+        - write results IN-PLACE into Pump
+        """
         
+        # 1) waterflow setpoint [m^3/s]
+        sp = getattr(action, "pump_flow_sp", None)
+        if sp is None and hasattr(action, "thermal"):
+            sp = getattr(action.thermal, "pump_flow_sp", None)
+
+        flow = 0.0 if sp is None else float(sp)
+        if flow < 0.0:
+            self.logger.warning(f"{self.name}: negative flow received; clamped to 0.0")
+            flow = 0.0
+
+        # 2) power via affinity law [W]
+        if self.rated_flow_m3s > 0.0 and self.rated_power_W >= 0.0:
+            ratio = flow / self.rated_flow_m3s
+            power_W = self.rated_power_W * (ratio ** self.power_exponent)
+        else:
+            power_W = 0.0
+
+        # 3) step energy [J]; timestep in seconds
+        energy_J = power_W * (timestep if (timestep and timestep > 0.0) else 0.0)
+
+        # 4) in-place update (pure SI)
+        state.waterflow_m3s = flow
+        state.power_W = power_W
+        state.energy_J_cum = getattr(state, "energy_J_cum", 0.0) + energy_J
+
+        # 5) optional history
+        self._record_state({"waterflow_m3s": flow, "power_W": power_W, "energy_J": energy_J})
+        
+        return {}
+
+
     def reset(self) -> None:
-        self.energy_total = 0.0
+        self._state_history.clear()
+        self._initialized = False
+        self.initialize()
