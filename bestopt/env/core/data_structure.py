@@ -324,6 +324,7 @@ class ThermalAction:
     
     chiller_cooling_kw_sp: float = 0.0        # Cooling demand [kW]
     chws_temp_c_sp: float = 0.0               # Chilled water supply temp setpoint [°C]
+    condenser_temp_c_sp: float = 35.0          # Condenser water temp setpoint [°C]
     
     # @TODO HVAC controls
     # @TODO Thermal storage control
@@ -633,7 +634,7 @@ class HeatPumpState(ComponentState):
         self.component_type = "heatpump"
 
 @dataclass
-class ChillerState:
+class ChillerState(ComponentState):
     cooling_kw: float = 0.0              # Chiller cooling output [kW]
     cop: float = 0.0                     # Coefficient of Performance
     chws_temp_c: float = 7.0             # Chilled Water Supply Temp [°C]

@@ -16,9 +16,10 @@ class ChillerModule(BaseModule):
     Input (from action):
         - ThermalAction.chiller_cooling_kw_sp  : Cooling demand [kW]
         - ThermalAction.chws_temp_c_sp         : Chilled water supply temp setpoint [°C]
+        - ThermalAction.condenser_temp_c_sp    : Condenser water temp setpoint [°C]
 
     Input (from disturbance):
-        - Disturbance.condenser_temp_c         : Condenser water temp [°C]
+        - none
 
     Output (written in-place to ChillerState):
         - cooling_kw
@@ -50,7 +51,7 @@ class ChillerModule(BaseModule):
         self,
         state: "ChillerState",
         action: "ThermalAction",
-        disturbance: "Disturbance",
+        #disturbance: "Disturbance",
         timestep: float
     ) -> Dict[str, Any]:
         """
@@ -58,8 +59,8 @@ class ChillerModule(BaseModule):
 
         Parameters:
             - state: ChillerState object to update in place
-            - action: includes cooling setpoint (kW) and chws_temp_c_sp (°C)
-            - disturbance: includes condenser_temp_c (°C)
+            - action: includes cooling setpoint (kW), chws_temp_c_sp (°C), and condenser_temp_c_sp (°C)
+            - disturbance: none
             - timestep: seconds
 
         Returns: Empty dictionary (in-place update only)
@@ -70,7 +71,7 @@ class ChillerModule(BaseModule):
         chws_sp = float(getattr(action, "chws_temp_c_sp", 7.0))
         chws_sp = np.clip(chws_sp, self.min_chws_temp, self.max_chws_temp)
 
-        t_cond = float(getattr(disturbance, "condenser_temp_c", 35.0))
+        t_cond = float(getattr(action, "condenser_temp_c_sp", 35.0))
         t_evap = chws_sp
 
         # 2. Compute PLR
