@@ -8,7 +8,13 @@ import importlib
 from typing import Dict, Any, List, Optional, Tuple
 from collections import defaultdict
 from .base import BaseModule
-from .data_structure import State, Action, Disturbance, Observation, WaterAction, ThermalAction, ElectricalAction
+from .data_structure import (
+    State, Action, Disturbance, Observation,
+    BatteryState, PVState, BLDGEState, EVState,
+    HVACState, BLDGTState, TESState,
+    WaterHeaterState,
+    ThermalAction, ElectricalAction, WaterAction
+)
 
 
 class BESTOptEnvironment:
@@ -51,6 +57,9 @@ class BESTOptEnvironment:
                 f"sim will run {self.total_step} steps (= floor)."
             )
 
+        self.simulation_start_time = configuration.get('environment', {}).get('parameters', {}).get(
+            'simulation_start_time', '2024-01-01 00:00:00')
+
         # Get building configurations
         buildings_config = self.config.get('buildings', {})
         if not buildings_config:
@@ -80,12 +89,13 @@ class BESTOptEnvironment:
         self.building_modules: Dict[str, Dict[str, Dict[str, BaseModule]]] = defaultdict(
             lambda: defaultdict(dict)
         )
+        self.disturbance_modules: Dict[str, BaseModule] = {}
         self.controllers: Dict[str, BaseModule] = {}
-        self.disturbances: Dict[str, BaseModule] = {}
         self.grid_module: Optional[BaseModule] = None  # @TODO
 
         # Build runtime
         self._generate_components()  # include modules/controller/disturbance
+        self._initialize_component_states()
         self._validate_controller_assignments()
         self.logger.info(f"Environment configuration finished")
 
@@ -94,6 +104,7 @@ class BESTOptEnvironment:
         """Generate all components (modules, controllers, disturbances)."""
         # Generate modules
         buildings_config = self.config.get('buildings', {})
+        thermal_modules_to_warmup = []
         for building_id, building_info in buildings_config.items():
             # Process each component type in the building
             for component_type in ['batteries', 'pv_systems', 'hvac_systems',
@@ -108,7 +119,10 @@ class BESTOptEnvironment:
                     )
                     if instance:
                         self.building_modules[building_id][component_type][component_id] = instance
+                        if component_type == 'thermal_zones':
+                            thermal_modules_to_warmup.append((building_id, component_id, instance))
 
+        self._warmup_thermal_modules(thermal_modules_to_warmup)
         # Generate controller
         controllers_config = self.config.get('controllers', {})
         active_controllers = self.config.get('active_controllers', {})
@@ -135,7 +149,31 @@ class BESTOptEnvironment:
                 must_subclass=BaseModule
             )
             if instance:
-                self.disturbances[dist_name] = instance
+                self.disturbance_modules[dist_name] = instance
+
+    def _warmup_thermal_modules(self, thermal_modules: List[Tuple[str, str, BaseModule]]) -> None:
+        """Warmup thermal dynamics modules immediately after creation."""
+        self.logger.info(f"Starting automatic warmup for {len(thermal_modules)} thermal dynamics modules...")
+
+        for building_id, component_id, module in thermal_modules:
+            try:
+                module_name = f"{building_id}.{component_id}"
+                self.logger.info(f"Warming up thermal module: {module_name}")
+
+                # Prepare the module for simulation
+                module.prepare_for_simulation(self.simulation_start_time)
+
+                # Log warmup status
+                if hasattr(module, 'get_state_summary'):
+                    summary = module.get_state_summary()
+                    buffer_size = summary.get('buffer_size', 0)
+                    self.logger.info(f"Warmup completed for {module_name}: {buffer_size} timesteps loaded")
+
+            except Exception as e:
+                self.logger.error(f"Failed to warmup {module_name}: {e}")
+                raise RuntimeError(f"Thermal dynamics warmup failed for {module_name}: {e}")
+
+        self.logger.info(f"Successfully warmed up {len(thermal_modules)} thermal dynamics modules")
 
     def _create_instance(
             self,
@@ -188,6 +226,72 @@ class BESTOptEnvironment:
         except Exception as e:
             self.logger.error(f"Failed to create {component_type} '{name}': {e}")
             raise
+
+    def _initialize_component_states(self) -> None:
+        """Initialize state objects for all created modules."""
+        buildings_config = self.config.get('buildings', {})
+
+        for building_id, building_info in buildings_config.items():
+            state = self.states[building_id]
+
+            # Initialize electrical component states
+            for component_type in ['batteries', 'pv_systems', 'bldg_e_loads']:
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    if component_type == 'batteries':
+                        # Create battery state from config
+                        battery_config = component_config.get('parameters', {})
+                        initial_soc = battery_config.get('initial_soc', 0.5)
+                        state.electrical.batteries[component_id] = BatteryState(
+                            component_id=component_id,
+                            battery_soc=initial_soc
+                        )
+                    elif component_type == 'pv_systems':
+                        state.electrical.pv_systems[component_id] = PVState(
+                            component_id=component_id
+                        )
+                    elif component_type == 'bldg_e_loads':
+                        state.electrical.bldg_e_loads[component_id] = BLDGEState(
+                            component_id=component_id
+                        )
+
+            # Initialize thermal component states
+            for component_type in ['hvac_systems', 'thermal_zones', 'thermal_storage']:
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    if component_type == 'hvac_systems':
+                        state.thermal.hvac_systems[component_id] = HVACState(
+                            component_id=component_id
+                        )
+                    elif component_type == 'thermal_zones':
+                        # Initialize with default or config values
+                        zone_config = component_config.get('parameters', {})
+                        initial_temp = zone_config.get('initial_temperature', 22.0)
+                        state.thermal.thermal_zones[component_id] = BLDGTState(
+                            component_id=component_id,
+                            temperature=initial_temp
+                        )
+                    elif component_type == 'thermal_storage':
+                        tes_config = component_config.get('parameters', {})
+                        initial_temp = tes_config.get('initial_temperature', 22.0)
+                        initial_soc = tes_config.get('initial_soc', 0.5)
+                        state.thermal.thermal_storage[component_id] = TESState(
+                            component_id=component_id,
+                            temperature=initial_temp,
+                            tes_soc=initial_soc
+                        )
+
+            # Initialize water component states
+            for component_type in ['water_heaters']:
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    if component_type == 'water_heaters':
+                        heater_config = component_config.get('parameters', {})
+                        initial_temp = heater_config.get('initial_temperature', 60.0)
+                        state.water.water_heaters[component_id] = WaterHeaterState(
+                            component_id=component_id,
+                            tank_temperature=initial_temp
+                        )
 
     def _validate_controller_assignments(self):
         """Validate that controller assignments match the expected domain structure."""
@@ -242,7 +346,7 @@ class BESTOptEnvironment:
 
         # Reset controllers and disturbances
         self._reset_components(self.controllers, "controller")
-        self._reset_components(self.disturbances, "disturbance")
+        self._reset_components(self.disturbance_modules, "disturbance_modules")
 
         # Reset states for each building
         for building_id in self.states.keys():
@@ -250,6 +354,8 @@ class BESTOptEnvironment:
             self.observations[building_id] = Observation()
             self.disturbances[building_id] = Disturbance()
             self.actions[building_id] = Action()
+
+        self._initialize_component_states()
 
         return self.observations  # TODO return the initial observation
 
@@ -392,10 +498,9 @@ class BESTOptEnvironment:
 
             # Call controller's step method
             action = controller.step(
-                state=domain_state,  # Pass only the relevant domain state
-                observation=self.observations[building_id],  # Full observation
+                state=domain_state,
+                observation=self.observations[building_id],
                 disturbance=self.disturbances[building_id],
-                resolution=self.res,
                 timestep=self.current_step
             )
 
@@ -418,12 +523,11 @@ class BESTOptEnvironment:
             building_id: ID of the building
         """
         # Update from each disturbance module
-        for dist_name, dist_module in self.disturbances.items():
+        for dist_name, dist_module in self.disturbance_modules.items():
             try:
                 # Get disturbance update
                 dist_update = dist_module.step(
-                    resolution=self.res,
-                    timestep=self.current_step
+                    current_step=self.current_step
                 )
 
                 # Update specific fields based on disturbance type
@@ -443,6 +547,7 @@ class BESTOptEnvironment:
         Args:
             building_id: ID of the building
         """
+        # @TODO not decide yet, if we should pass whole state or just specific state when we excute the module, or just hybrid
         building_modules = self.building_modules.get(building_id, {})
         action = self.actions[building_id]
         state = self.states[building_id]
@@ -452,11 +557,11 @@ class BESTOptEnvironment:
         if "batteries" in building_modules:
             for battery_id, battery_module in building_modules["batteries"].items():
                 try:
+                    # @TODO need to adaptive
                     battery_module.step(
                         state=state.electrical.batteries[battery_id],
-                        action=action.electrical,  # Pass electrical action
+                        action=action.electrical,
                         disturbance=disturbance,
-                        resolution=self.res,
                         timestep=self.current_step
                     )
                 except Exception as e:
@@ -465,6 +570,7 @@ class BESTOptEnvironment:
         if "pv_systems" in building_modules:
             for pv_id, pv_module in building_modules["pv_systems"].items():
                 try:
+                    # @TODO need to adaptive
                     pv_module.step(
                         state=state.electrical.pv_systems[pv_id],
                         action=action.electrical,  # Pass electrical action
@@ -496,7 +602,6 @@ class BESTOptEnvironment:
                         state=state.thermal.thermal_zones[zone_id],
                         action=action.thermal,  # Pass thermal action
                         disturbance=disturbance,
-                        resolution=self.res,
                         timestep=self.current_step
                     )
                 except Exception as e:
@@ -575,21 +680,19 @@ class BESTOptEnvironment:
             action = self.actions[building_id]
 
             info["buildings"][building_id] = {
+                # @ Refine later, what info are we going to collect?
                 "electrical": {
                     "total_generation": state.electrical.total_generation,
                     "total_demand": state.electrical.total_demand,
                     "grid_import": state.electrical.grid_import,
                     "grid_export": state.electrical.grid_export,
-                    "battery_action": action.electrical.battery_power
                 },
                 "thermal": {
                     "heating_load": state.thermal.total_heating_load,
                     "cooling_load": state.thermal.total_cooling_load,
-                    "hvac_action": action.thermal.hvac_thermal_load
                 },
                 "water": {
                     "heating_power": state.water.total_water_heating_power,
-                    "heater_action": action.water.water_heater_power
                 }
             }
 

@@ -1,43 +1,138 @@
 """
-Disturbance weather module.
+Weather disturbance module.
 """
 
-import numpy as np
-from typing import Dict, Any, Optional, Tuple
-import logging
-
+from __future__ import annotations
+from typing import Dict, Any, Optional
+import os
+import pandas as pd
 from ..core.base import BaseModule
-from ..core.data_structure import State, Action, Disturbance
+from ..core.data_structure import WeatherData
 
+REQUIRED_COLS_CSV = {"outdoor_temperature", "solar_radiation"}
 
 class WeatherModule(BaseModule):
     """
-    Weather model.
-
-    Features:
-    # @TODO
-    -
-    -
-    -
+    Weather module that provides outdoor temperature and solar radiation.
+    Supports CSV (with columns: outdoor_temperature, solar_radiation)
+    and EPW (basic fields parsed).
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "Weather"):
-        """
-        Initialize weather module.
-
-        Args:
-            config: Weather configuration parameters
-            name: Module name
-        """
         super().__init__(config, name)
-        pass
+        self.weather_data: Optional[pd.DataFrame] = None
+        self.current_weather = WeatherData()
+        self.current_timestep = 0
+        # @TODO for future large scale evaluation
+        self.location = config.get("location", "Syracuse, NY")
 
     def initialize(self) -> None:
-        pass
+        """Initialize weather data source."""
+        file_path = self.config.get("file_path")
 
-    def step(self, state: State, action: Action,
-             disturbance: Disturbance, timestep: float) -> Dict[str, Any]:
-        pass
+        if file_path:
+            try:
+                if not os.path.isfile(file_path):
+                    raise FileNotFoundError(f"No such file: {file_path}")
+                self._load_weather_file(file_path)
+            except Exception as e:
+                self.logger.warning(f"Failed to load weather file {file_path}: {e}")
+                self.logger.info("Falling back to no weather data (module will return None).")
+                self.weather_data = None
+        else:
+            self.logger.info("No weather data provided (config['file_path'] missing).")
+            self.weather_data = None
+
+        # Initialize current weather
+        self.current_weather = WeatherData(outdoor_temperature=0.0, solar_radiation=0.0)
+        self.logger.info(f"Weather module initialized: {self.name}")
+
+    def step(self, current_step: int) -> Optional[WeatherData]:
+        self.current_timestep = current_step
+
+        if self.weather_data is None or self.weather_data.empty:
+            self.logger.error("Weather data not loaded; step() returning None.")
+            return None
+
+        if not (0 <= current_step < len(self.weather_data)):
+            self.logger.error(
+                f"Requested step {current_step} out of range [0, {len(self.weather_data)-1}]."
+            )
+            return None
+
+        weather = self._get_weather_from_data(current_step)
+        self.current_weather = weather
+        return weather
+
+    def _load_weather_file(self, file_path: str) -> None:
+        """Load weather data from CSV or EPW file into self.weather_data."""
+        if file_path.lower().endswith(".csv"):
+            df = pd.read_csv(file_path)
+            # If first column is a datetime index, respect it; otherwise try to parse
+            if df.columns.size >= 1 and pd.api.types.is_datetime64_any_dtype(df.iloc[:, 0]):
+                df.set_index(df.columns[0], inplace=True)
+            # Ensure required columns exist
+            missing = REQUIRED_COLS_CSV - set(df.columns)
+            if missing:
+                raise ValueError(f"CSV is missing required columns: {missing}")
+            self.weather_data = df
+            self.logger.info(f"Loaded CSV weather data: {len(self.weather_data)} records.")
+
+        elif file_path.lower().endswith(".epw"):
+            # Likely to get an error for EPW file unless it follows a standard format...
+            names = [
+                "year","month","day","hour","minute","data_source",
+                "dry_bulb_temp","dew_point_temp","relative_humidity","atmospheric_pressure",
+                "extraterrestrial_horizontal_radiation","extraterrestrial_direct_radiation",
+                "horizontal_infrared_radiation","global_horizontal_radiation",
+                "direct_normal_radiation","diffuse_horizontal_radiation"
+            ] + [f"field_{i}" for i in range(16, 35)]
+            try:
+                epw = pd.read_csv(file_path, skiprows=8, header=None, names=names)
+                epw["hour"] = epw["hour"].clip(1, 24) - 1
+                epw["minute"] = epw.get("minute", 0).fillna(0).astype(int)
+                epw["datetime"] = pd.to_datetime(
+                    epw[["year", "month", "day", "hour", "minute"]],
+                    errors="coerce"
+                )
+                if epw["datetime"].isna().any():
+                    n_bad = int(epw["datetime"].isna().sum())
+                    self.logger.warning(f"{n_bad} EPW rows had invalid datetimes and will be dropped.")
+                    epw = epw.dropna(subset=["datetime"])
+
+                epw = epw.set_index("datetime").sort_index()
+
+                # Map to required columns
+                epw["outdoor_temperature"] = epw["dry_bulb_temp"].astype(float)
+                epw["solar_radiation"] = epw["global_horizontal_radiation"].astype(float)
+
+                self.weather_data = epw[["outdoor_temperature", "solar_radiation"]]
+                self.logger.info(f"Loaded EPW weather data: {len(self.weather_data)} records.")
+            except Exception as e:
+                raise ValueError(f"Failed to parse EPW file: {e}") from e
+
+        else:
+            raise ValueError(f"Unsupported weather file format: {file_path}")
+
+    def _get_weather_from_data(self, current_step: int) -> WeatherData:
+        row = self.weather_data.iloc[current_step]
+        ot = float(row["outdoor_temperature"])
+        sr = float(row["solar_radiation"])
+        return WeatherData(outdoor_temperature=ot, solar_radiation=sr)
 
     def reset(self) -> None:
-        pass
+        self.current_timestep = 0
+        self.current_weather = WeatherData(outdoor_temperature=0.0, solar_radiation=0.0)
+        self.logger.debug(f"Reset weather module: {self.name}")
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            "current_timestep": self.current_timestep,
+            "outdoor_temperature": self.current_weather.outdoor_temperature,
+            "solar_radiation": self.current_weather.solar_radiation,
+        }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        self.current_timestep = int(state.get("current_timestep", 0))
+        self.current_weather.outdoor_temperature = float(state.get("outdoor_temperature", 0.0))
+        self.current_weather.solar_radiation = float(state.get("solar_radiation", 0.0))
