@@ -101,7 +101,7 @@ cm.add_controller(
         "prediction_horizon": 24,
         "objectives": ["cost_minimization", "peak_shaving"]
     },
-    class_path="bestopt.controllers.electrical.RuleBased"
+    class_path="bestopt.env.controllers.electrical.RuleBased"
 )
 
 cm.add_controller(
@@ -111,7 +111,7 @@ cm.add_controller(
         "prediction_horizon": 12,
         "comfort_bounds": {"min": 20, "max": 24}
     },
-    class_path="bestopt.controllers.thermal.RuleBased"
+    class_path="bestopt.env.controllers.thermal.RuleBased"
 )
 
 cm.add_controller(
@@ -120,7 +120,7 @@ cm.add_controller(
         "domain": "water",
         "tank_temp_range": [55, 65]
     },
-    class_path="bestopt.controllers.water.RuleBased"
+    class_path="bestopt.env.controllers.water.RuleBased"
 )
 
 # ------------------------------------------------------------------------------

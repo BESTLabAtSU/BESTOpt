@@ -60,9 +60,9 @@ class GRIDMode(Enum):
 @dataclass
 class ComponentState:
     """Base class for all component states."""
-    component_id: str
-    component_type: str
-    domain: str  # 'electrical', 'thermal', 'water'
+    component_id: str = ""
+    component_type: str = ""
+    domain: str = "" # 'electrical', 'thermal', 'water'
     timestamp: float = 0.0
     is_active: bool = True
 
@@ -315,7 +315,8 @@ class State:
 @dataclass
 class ThermalAction:
     """Thermal control actions."""
-    pass
+    hvac_power: float = 0.0
+    hvac_mode: HVACMode = HVACMode.OFF
     # @TODO HVAC controls
     # @TODO Thermal storage control
 
