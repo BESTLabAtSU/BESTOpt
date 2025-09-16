@@ -644,3 +644,23 @@ class ChillerState:
         # identify this component
         self.domain = "thermal"
         self.component_type = "chiller"
+
+@dataclass
+class BoilerState(ComponentState):
+    """Standalone Boiler state."""
+
+    # Inputs
+    inlet_temp_C: float = 0.0
+    flow_m3s: float = 0.0
+    outlet_temp_set_C: float = 0.0
+
+    # Outputs
+    outlet_temp_C: float = 0.0
+    thermal_power_W: float = 0.0
+    fuel_power_W: float = 0.0
+    energy_J_cum: float = 0.0   # cumulative fuel energy
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with taxonomy
+        self.domain = "thermal"
+        self.component_type = "boiler"
