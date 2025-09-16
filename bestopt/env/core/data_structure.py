@@ -578,6 +578,7 @@ class PumpState(ComponentState):
         self.domain = "thermal"
         self.component_type = "pump"
 
+
 @dataclass
 class FanState(ComponentState):
     """Standalone; not aggregated into ThermalDomainState for now."""
@@ -589,7 +590,6 @@ class FanState(ComponentState):
         # identify this component; keep it consistent with your taxonomy
         self.domain = "thermal"
         self.component_type = "fan"
-
 
 
 @dataclass
@@ -606,3 +606,25 @@ class CoilState(ComponentState):
         # identify this component; keep it consistent with your taxonomy
         self.domain = "thermal"
         self.component_type = "coil"
+
+
+@dataclass
+class HeatPumpState(ComponentState):
+    """Standalone Heat Pump state."""
+
+    source_inlet_temp_C: float = 0.0
+    sink_inlet_temp_C: float = 0.0
+    source_flow_m3s: float = 0.0
+    sink_flow_m3s: float = 0.0
+    sink_outlet_temp_set_C: float = 0.0
+
+    source_outlet_temp_C: float = 0.0
+    sink_outlet_temp_C: float = 0.0
+    thermal_power_W: float = 0.0
+    elec_power_W: float = 0.0
+    energy_J_cum: float = 0.0
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with taxonomy
+        self.domain = "thermal"
+        self.component_type = "heatpump"
