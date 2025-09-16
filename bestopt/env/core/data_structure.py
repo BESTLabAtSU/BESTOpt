@@ -322,6 +322,9 @@ class ThermalAction:
     pump_flow_sp: Optional[float] = None    # m³/s water flow for circulation    
     supplyfan_flow_sp: Optional[float] = None
     
+    chiller_cooling_kw_sp: float = 0.0        # Cooling demand [kW]
+    chws_temp_c_sp: float = 0.0               # Chilled water supply temp setpoint [°C]
+    
     # @TODO HVAC controls
     # @TODO Thermal storage control
 
@@ -628,3 +631,16 @@ class HeatPumpState(ComponentState):
         # identify this component; keep it consistent with taxonomy
         self.domain = "thermal"
         self.component_type = "heatpump"
+
+@dataclass
+class ChillerState:
+    cooling_kw: float = 0.0              # Chiller cooling output [kW]
+    cop: float = 0.0                     # Coefficient of Performance
+    chws_temp_c: float = 7.0             # Chilled Water Supply Temp [°C]
+    chw_flow_m3s: float = 0.0            # Chilled Water Flow Rate [m³/s]
+    power_W: float = 0.0                 # Electric power [W]
+    energy_J_cum: float = 0.0            # Accumulated energy [J]
+    def __post_init__(self):
+        # identify this component
+        self.domain = "thermal"
+        self.component_type = "chiller"
