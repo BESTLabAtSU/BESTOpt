@@ -322,9 +322,12 @@ class ThermalAction:
     pump_flow_sp: Optional[float] = None    # m³/s water flow for circulation    
     supplyfan_flow_sp: Optional[float] = None
     
-    chiller_cooling_kw_sp: float = 0.0        # Cooling demand [kW]
-    chws_temp_c_sp: float = 0.0               # Chilled water supply temp setpoint [°C]
-    condenser_temp_c_sp: float = 35.0          # Condenser water temp setpoint [°C]
+    chiller_cooling_kw_sp: Optional[float] = 0.0        # Cooling demand [kW]
+    chws_temp_c_sp: Optional[float] = 0.0               # Chilled water supply temp setpoint [°C]
+    condenser_temp_c_sp: Optional[float] = 35.0         # Condenser water temp setpoint [°C]
+    
+    cooling_tower_load_W_sp: Optional[float] = 0.0      # Cooling tower load [W]
+    wet_bulb_temp_c: Optional[float] = 25.0             # Wet bulb temperature for cooling tower [°C]
     
     # @TODO HVAC controls
     # @TODO Thermal storage control
@@ -665,3 +668,14 @@ class BoilerState(ComponentState):
         # identify this component; keep it consistent with taxonomy
         self.domain = "thermal"
         self.component_type = "boiler"
+        
+@dataclass
+class CoolingTowerState(ComponentState):
+    heat_rejected_W: float = 0.0
+    outlet_temp_c: float = 0.0
+    fan_power_W: float = 0.0
+    energy_J_cum: float = 0.0
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "cooling_tower"
