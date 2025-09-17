@@ -319,8 +319,8 @@ class ThermalAction:
     hvac_power: float = 0.0
     hvac_mode: HVACMode = HVACMode.OFF
 
-    pump_flow_sp: Optional[float] = None    # m³/s water flow for circulation    
-    supplyfan_flow_sp: Optional[float] = None
+    pump_flow_sp: Optional[float] = None                # m³/s water flow for circulation    
+    supplyfan_flow_sp: Optional[float] = None           # m³/s air flow for supply fan
     
     chiller_cooling_kw_sp: Optional[float] = 0.0        # Cooling demand [kW]
     chws_temp_c_sp: Optional[float] = 0.0               # Chilled water supply temp setpoint [°C]
@@ -328,6 +328,9 @@ class ThermalAction:
     
     cooling_tower_load_W_sp: Optional[float] = 0.0      # Cooling tower load [W]
     wet_bulb_temp_c: Optional[float] = 25.0             # Wet bulb temperature for cooling tower [°C]
+    
+    ice_tank_mode: Optional[str] = "idle"               # ["charge", "discharge", "idle"]
+    ice_tank_power_W_sp: Optional[float] = 0.0          # Power setpoint in W
     
     # @TODO HVAC controls
     # @TODO Thermal storage control
@@ -679,3 +682,13 @@ class CoolingTowerState(ComponentState):
     def __post_init__(self):
         self.domain = "thermal"
         self.component_type = "cooling_tower"
+        
+@dataclass
+class IceTankState(ComponentState):
+    soc: float = 0.0             # State of charge (0.0 - 1.0)
+    q_actual_W: float = 0.0      # Actual charge (+) or discharge (-) power in Watts
+    energy_J_cum: float = 0.0    # Cumulative energy transferred in Joules
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "ice_tank"
