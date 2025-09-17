@@ -1,12 +1,12 @@
 """
-Chiller module.
+Chiller module
 """
 
 from typing import Dict, Any
 import numpy as np
 
 from ...core.base import BaseModule
-from ...core.data_structure import ThermalAction, ChillerState, Disturbance
+from ...core.data_structure import ThermalAction, ChillerState
 
 
 class ChillerModule(BaseModule):
@@ -14,17 +14,14 @@ class ChillerModule(BaseModule):
     Chiller module with Carnot-based COP, cooling output, and CHW flow rate.
 
     Input (from action):
-        - ThermalAction.chiller_cooling_kw_sp  : Cooling demand [kW]
-        - ThermalAction.chws_temp_c_sp         : Chilled water supply temp setpoint [°C]
-        - ThermalAction.condenser_temp_c_sp    : Condenser water temp setpoint [°C]
-
-    Input (from disturbance):
-        - none
+        - ThermalAction.chiller_cooling_W_sp  : Cooling demand [W]
+        - ThermalAction.chws_temp_c_sp        : CHW supply temp setpoint [°C]
+        - ThermalAction.condenser_temp_c_sp   : Condenser temp setpoint [°C]
 
     Output (written in-place to ChillerState):
-        - cooling_kw
+        - cooling_W
         - cop
-        - chws_temp_c (setpoint-following)
+        - chws_temp_c
         - chw_flow_m3s
         - power_W
         - energy_J_cum
@@ -33,16 +30,16 @@ class ChillerModule(BaseModule):
     def __init__(self, config: Dict[str, Any], name: str = "chiller"):
         super().__init__(config, name)
 
-        self.rated_capacity_kw: float = float(config.get("rated_capacity_kw", 150.0))
-        self.min_plr: float = float(config.get("min_plr", 0.15))
-        self.max_plr: float = float(config.get("max_plr", 1.03))
-        self.eta_carnot: float = float(config.get("eta_carnot", 0.4))  # Carnot effectiveness
-        self.min_cop: float = float(config.get("min_cop", 2.0))
-        self.max_cop: float = float(config.get("max_cop", 10.0))
-        self.min_chws_temp: float = float(config.get("min_chws_temp_c", 5.0))
-        self.max_chws_temp: float = float(config.get("max_chws_temp_c", 10.0))
-        self.rho: float = 1000.0  # kg/m³
-        self.cp: float = 4180.0   # J/kg-K
+        self.rated_capacity_W = float(config.get("rated_capacity_W", 150_000.0))  # 150 kW
+        self.min_plr = float(config.get("min_plr", 0.15))
+        self.max_plr = float(config.get("max_plr", 1.03))
+        self.eta_carnot = float(config.get("eta_carnot", 0.4))
+        self.min_cop = float(config.get("min_cop", 2.0))
+        self.max_cop = float(config.get("max_cop", 10.0))
+        self.min_chws_temp = float(config.get("min_chws_temp_c", 5.0))
+        self.max_chws_temp = float(config.get("max_chws_temp_c", 10.0))
+        self.rho = 1000.0  # kg/m³
+        self.cp = 4180.0   # J/kg-K
 
     def initialize(self) -> None:
         self._initialized = True
@@ -51,60 +48,39 @@ class ChillerModule(BaseModule):
         self,
         state: "ChillerState",
         action: "ThermalAction",
-        #disturbance: "Disturbance",
         timestep: float
     ) -> Dict[str, Any]:
-        """
-        One timestep simulation of the chiller.
-
-        Parameters:
-            - state: ChillerState object to update in place
-            - action: includes cooling setpoint (kW), chws_temp_c_sp (°C), and condenser_temp_c_sp (°C)
-            - disturbance: none
-            - timestep: seconds
-
-        Returns: Empty dictionary (in-place update only)
-        """
-
-        # 1. Inputs
-        q_kw = float(getattr(action, "chiller_cooling_kw_sp", 0.0))
-        chws_sp = float(getattr(action, "chws_temp_c_sp", 7.0))
-        chws_sp = np.clip(chws_sp, self.min_chws_temp, self.max_chws_temp)
-
+        q_W = float(getattr(action, "chiller_cooling_W_sp", 0.0))
+        chws_sp = np.clip(float(getattr(action, "chws_temp_c_sp", 7.0)),
+                          self.min_chws_temp, self.max_chws_temp)
         t_cond = float(getattr(action, "condenser_temp_c_sp", 35.0))
         t_evap = chws_sp
 
-        # 2. Compute PLR
-        plr = q_kw / self.rated_capacity_kw
-        plr = np.clip(plr, self.min_plr, self.max_plr)
-        q_out = self.rated_capacity_kw * plr  # Final cooling output [kW]
+        plr = np.clip(q_W / self.rated_capacity_W, self.min_plr, self.max_plr)
+        q_out_W = self.rated_capacity_W * plr
 
-        # 3. COP (Carnot-based)
+        # COP
         T_evap_K = t_evap + 273.15
         T_cond_K = t_cond + 273.15
         delta_T = max(T_cond_K - T_evap_K, 0.5)
         cop_carnot = T_evap_K / delta_T
-        cop = self.eta_carnot * cop_carnot
-        cop = np.clip(cop, self.min_cop, self.max_cop)
+        cop = np.clip(self.eta_carnot * cop_carnot, self.min_cop, self.max_cop)
 
-        # 4. Power & Flow
-        power_W = (q_out * 1000) / cop
-        flow_m3s = (q_out * 1000) / (self.rho * self.cp * max(1e-3, (12.0 - t_evap)))
+        power_W = q_out_W / cop
+        flow_m3s = q_out_W / (self.rho * self.cp * max(1e-3, (12.0 - t_evap)))
 
-        # 5. Energy
         energy_J = power_W * timestep if timestep > 0 else 0.0
 
-        # 6. In-place state update
-        state.cooling_kw = q_out
+        # Update state
+        state.cooling_W = q_out_W
         state.cop = cop
         state.chws_temp_c = chws_sp
         state.chw_flow_m3s = flow_m3s
         state.power_W = power_W
-        state.energy_J_cum = getattr(state, "energy_J_cum", 0.0) + energy_J
+        state.energy_J_cum += energy_J
 
-        # 7. Logging
         self._record_state({
-            "cooling_kw": q_out,
+            "cooling_W": q_out_W,
             "cop": cop,
             "power_W": power_W,
             "chws_temp_c": chws_sp,

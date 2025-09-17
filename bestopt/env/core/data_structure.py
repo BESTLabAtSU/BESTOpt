@@ -322,7 +322,7 @@ class ThermalAction:
     pump_flow_sp: Optional[float] = None                # m³/s water flow for circulation    
     supplyfan_flow_sp: Optional[float] = None           # m³/s air flow for supply fan
     
-    chiller_cooling_kw_sp: Optional[float] = 0.0        # Cooling demand [kW]
+    chiller_cooling_W_sp: Optional[float] = 0.0        # Cooling demand [kW]
     chws_temp_c_sp: Optional[float] = 0.0               # Chilled water supply temp setpoint [°C]
     condenser_temp_c_sp: Optional[float] = 35.0         # Condenser water temp setpoint [°C]
     
@@ -641,7 +641,7 @@ class HeatPumpState(ComponentState):
 
 @dataclass
 class ChillerState(ComponentState):
-    cooling_kw: float = 0.0              # Chiller cooling output [kW]
+    cooling_W: float = 0.0              # Chiller cooling output [kW]
     cop: float = 0.0                     # Coefficient of Performance
     chws_temp_c: float = 7.0             # Chilled Water Supply Temp [°C]
     chw_flow_m3s: float = 0.0            # Chilled Water Flow Rate [m³/s]
