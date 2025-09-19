@@ -1,5 +1,5 @@
 """
-Rule-based thermal controller for HVAC systems.
+
 """
 
 import numpy as np
@@ -8,12 +8,12 @@ from ..core.base import BaseModule
 from ..core.data_structure import State, Action, Disturbance, Observation, ThermalAction, HVACMode
 
 
-class RuleBased(BaseModule):
+class SupervisoryController(BaseModule):
     """
     Rule-based thermal controller.
     """
 
-    def __init__(self, config: Dict[str, Any], name: str = "RuleBased"):
+    def __init__(self, config: Dict[str, Any], name: str = "SupervisoryController"):
         """Initialize rule-based thermal controller."""
         super().__init__(config, name)
 
@@ -22,8 +22,9 @@ class RuleBased(BaseModule):
         self.mode = HVACMode(config.get("mode", "auto"))
 
         # Comfort settings
-        self.setpoint_cooling = config.get("setpoint_cooling", 24.0)  # °C
-        self.setpoint_heating = config.get("setpoint_heating", 21.0)  # °C
+        # @TODO These settings should be more dynamic in the future
+        self.setpoint_cooling = config.get("setpoint_cooling", 21.0)  # °C
+        self.setpoint_heating = config.get("setpoint_heating", 19.0)  # °C
         self.deadband = config.get("deadband", 0.5)  # °C
 
         # HVAC capacity settings
@@ -78,21 +79,22 @@ class RuleBased(BaseModule):
                 occupancy, disturbance
             )
 
-            # Calculate control action
-            hvac_power = self._calculate_hvac_power(
+            supply_air_flow_rate, supply_air_temperature = self._supervisory(
                 current_temp=current_temp,
                 cooling_setpoint=cooling_setpoint,
                 heating_setpoint=heating_setpoint,
                 timestep=timestep
             )
 
-            # Update internal state
-            self.current_hvac_power = hvac_power
+            self.current_supply_air_flow_rate = supply_air_flow_rate
+            self.current_supply_air_temperature = supply_air_temperature
 
             # Create thermal action
             thermal_action = ThermalAction()
-            thermal_action.hvac_power = hvac_power
-            thermal_action.hvac_mode = self._determine_hvac_mode(hvac_power)
+            thermal_action.supervisory_supply_air_flow_rate = supply_air_flow_rate
+            thermal_action.supervisory_supply_air_temperature = supply_air_temperature
+            #@ TODO update the following function
+            # thermal_action.hvac_mode = self._determine_hvac_mode(hvac_power)
 
             return thermal_action
 
@@ -119,54 +121,53 @@ class RuleBased(BaseModule):
 
         return cooling_setpoint, heating_setpoint
 
-    def _calculate_hvac_power(self, current_temp: float, cooling_setpoint: float,
+    def _supervisory(self, current_temp: float, cooling_setpoint: float,
                             heating_setpoint: float, timestep: float) -> float:
         # Calculate temperature errors
         cooling_error = current_temp - cooling_setpoint
         heating_error = heating_setpoint - current_temp
-        can_change_state = True
+        can_change_state = True #@TODO add cyclying constraint later
 
         # Determine control action based on mode
         if self.mode == HVACMode.COOLING:
-            power = self._cooling_control(cooling_error, can_change_state)
+            supply_air_flow_rate, supply_air_temperature = self._cooling_control(cooling_error, can_change_state)
         elif self.mode == HVACMode.HEATING:
-            power = self._heating_control(heating_error, can_change_state)
+            supply_air_flow_rate, supply_air_temperature = self._heating_control(heating_error, can_change_state)
         elif self.mode == HVACMode.AUTO:
-            power = self._auto_control(cooling_error, heating_error, can_change_state)
+            supply_air_flow_rate, supply_air_temperature = self._auto_control(cooling_error, heating_error, can_change_state)
         else:  # OFF mode
-            power = 0.0
+            supply_air_flow_rate, supply_air_temperature = 0.0
 
-        # Update state tracking
-        new_is_on = abs(power) > 0
-        if new_is_on != self.hvac_is_on:
-            self.last_state_change_time = timestep
-            self.hvac_is_on = new_is_on
-
-        return power
+        return supply_air_flow_rate, supply_air_temperature
 
     def _cooling_control(self, cooling_error: float, can_change_state: bool) -> float:
         """Cooling-only control logic."""
         if cooling_error > self.deadband:
             # Too warm - start/increase cooling
             if cooling_error > 2 * self.deadband:
-                return self.stage2_power  # High cooling
+                supply_air_flow_rate = 1
+                supply_air_temperature = 13
             else:
-                return self.stage1_power  # Low cooling
+                supply_air_flow_rate = 0.5
+                supply_air_temperature = 13
         elif cooling_error < -self.deadband and can_change_state:
-            # Cool enough - turn off
-            return 0.0
+            supply_air_flow_rate = 0.5
+            supply_air_temperature = None
         else:
-            # Maintain current state
-            return self.current_hvac_power
+            supply_air_flow_rate = self.current_supply_air_flow_rate
+            supply_air_temperature = self.current_supply_air_temperature
 
+        return supply_air_flow_rate, supply_air_temperature
+
+    # @Revise heating, auto later
     def _heating_control(self, heating_error: float, can_change_state: bool) -> float:
         """Heating-only control logic."""
         if heating_error > self.deadband:
             # Too cool - start/increase heating
             if heating_error > 2 * self.deadband:
-                return -self.stage2_power  # High heating (negative)
+                return self.stage2_power
             else:
-                return -self.stage1_power  # Low heating (negative)
+                return self.stage1_power
         elif heating_error < -self.deadband and can_change_state:
             # Warm enough - turn off
             return 0.0
@@ -180,16 +181,16 @@ class RuleBased(BaseModule):
         # Cooling needed
         if cooling_error > self.deadband:
             if cooling_error > 2 * self.deadband:
-                return self.stage2_power
+                return self.stage2_power*-1
             else:
-                return self.stage1_power
+                return self.stage1_power*-1
 
         # Heating needed
         elif heating_error > self.deadband:
             if heating_error > 2 * self.deadband:
-                return -self.stage2_power
+                return self.stage2_power
             else:
-                return -self.stage1_power
+                return self.stage1_power
 
         # In comfort zone - turn off if allowed
         elif can_change_state:
@@ -201,9 +202,9 @@ class RuleBased(BaseModule):
 
     def _determine_hvac_mode(self, power: float) -> str:
         """Determine HVAC operating mode from power level."""
-        if power > 0:
+        if power < 0:
             return "cooling"
-        elif power < 0:
+        elif power > 0:
             return "heating"
         else:
             return "off"

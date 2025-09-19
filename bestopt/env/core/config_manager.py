@@ -255,6 +255,62 @@ class ConfigurationManager:
         controllers[controller_name] = entry
         self.logger.info(f"Added controller {controller_name}")
 
+    def add_local_controller(self, component_path: str,
+                             *, parameters: Optional[Dict[str, Any]] = None,
+                             class_path: Optional[str] = None,
+                             dataclass_obj: Optional[object] = None,
+                             overwrite: bool = True) -> None:
+        """
+        Add a local controller for a specific component.
+
+        Args:
+            component_path: Full path to component (e.g., "SFH_1.hvac_systems.fan")
+            parameters: Controller parameters
+            class_path: Python class path for the local controller
+            dataclass_obj: Optional dataclass configuration
+            overwrite: Whether to overwrite existing controller
+        """
+        local_controllers = self.config.setdefault("local_controllers", {})
+
+        if not overwrite and component_path in local_controllers:
+            self.logger.info(f"Local controller for {component_path} exists, skipping")
+            return
+
+        default_params = self._dataclass_to_dict(dataclass_obj)
+        merged_params = self._merge_params(default_params, parameters)
+
+        entry = {"parameters": merged_params}
+        if class_path:
+            entry["class_path"] = class_path
+
+        local_controllers[component_path] = entry
+        self.logger.info(f"Added local controller for component: {component_path}")
+
+    def get_local_controllers(self) -> Dict[str, Dict[str, Any]]:
+        """Get all configured local controllers."""
+        return self.config.get('local_controllers', {})
+
+    def remove_local_controller(self, component_path: str) -> None:
+        """Remove a local controller for a component."""
+        local_controllers = self.config.get('local_controllers', {})
+        if component_path in local_controllers:
+            del local_controllers[component_path]
+            self.logger.info(f"Removed local controller for: {component_path}")
+        else:
+            self.logger.warning(f"No local controller found for: {component_path}")
+
+    def select_local_controllers(self) -> None:
+        """Select all local controllers for selected buildings."""
+        local_controllers = self.config.get('local_controllers', {})
+        self.selected_local_controllers = {}
+
+        for component_path, controller_config in local_controllers.items():
+            # Check if component belongs to a selected building
+            parts = component_path.split('.')
+            if parts[0] in self.selected_buildings:
+                self.selected_local_controllers[component_path] = self._deep_copy_dict(controller_config)
+                self.logger.info(f"Selected local controller for: {component_path}")
+
     # Disturbances management
     def get_available_disturbances(self) -> List[str]:
         return list(self.config.get('disturbances', {}).keys())
@@ -372,10 +428,13 @@ class ConfigurationManager:
     # Configuration Generation and Validation
     def get_final_configuration(self) -> Dict[str, Any]:
         """Generate final configuration for the environment."""
+        self.select_local_controllers()
+
         return {
             "buildings": self.selected_buildings,
             "controllers": self.selected_controllers,
             "active_controllers": self.active_controllers,
+            "local_controllers": self.selected_local_controllers,  # Add this line
             "disturbances": self.selected_disturbances,
             "environment": self.selected_environment,
             "grid": self.selected_grid
@@ -451,10 +510,23 @@ class ConfigurationManager:
                 if components:
                     print(f"    {component_type}: {list(components.keys())}")
 
+                    # Check for local controllers
+                    for component_id in components.keys():
+                        component_path = f"{building_id}.{component_type}.{component_id}"
+                        if hasattr(self,
+                                   'selected_local_controllers') and component_path in self.selected_local_controllers:
+                            print(f"      └─ {component_id} has local controller")
+
         # Global components
         print(f"\nDisturbances: {list(self.selected_disturbances.keys())}")
         print(f"Environment: {'Selected' if self.selected_environment else 'Not selected'}")
         print(f"Grid: {'Selected' if self.selected_grid else 'Not selected'}")
+
+        # Local Controllers
+        if hasattr(self, 'selected_local_controllers') and self.selected_local_controllers:
+            print(f"\nLocal Controllers ({len(self.selected_local_controllers)}):")
+            for path in self.selected_local_controllers.keys():
+                print(f"  - {path}")
 
         # Validation warnings
         warnings = self.validate_configuration()

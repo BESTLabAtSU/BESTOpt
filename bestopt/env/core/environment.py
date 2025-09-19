@@ -15,7 +15,20 @@ from .data_structure import (
     WaterHeaterState,
     ThermalAction, ElectricalAction, WaterAction
 )
+import torch
+import random
+import os
+import numpy as np
 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+seed_value = 142857
+set_seed(seed_value)
 
 class BESTOptEnvironment:
     """Runtime environment that manages all modules."""
@@ -91,6 +104,7 @@ class BESTOptEnvironment:
         )
         self.disturbance_modules: Dict[str, BaseModule] = {}
         self.controllers: Dict[str, BaseModule] = {}
+        self.local_controllers: Dict[str, BaseModule] = {}
         self.grid_module: Optional[BaseModule] = None  # @TODO
 
         # Build runtime
@@ -119,6 +133,8 @@ class BESTOptEnvironment:
                     )
                     if instance:
                         self.building_modules[building_id][component_type][component_id] = instance
+                        component_path = f"{building_id}.{component_type}.{component_id}"
+                        self._create_local_controller_if_exists(component_path, instance)
                         if component_type == 'thermal_zones':
                             thermal_modules_to_warmup.append((building_id, component_id, instance))
 
@@ -150,6 +166,23 @@ class BESTOptEnvironment:
             )
             if instance:
                 self.disturbance_modules[dist_name] = instance
+
+    def _create_local_controller_if_exists(self, component_path: str, module_instance: BaseModule) -> None:
+        """Create local controller for a component if configured."""
+        local_controllers_config = self.config.get('local_controllers', {})
+
+        if component_path in local_controllers_config:
+            controller_config = local_controllers_config[component_path]
+            controller_instance = self._create_instance(
+                name=f"{component_path}_local",
+                config=controller_config,
+                component_type="local_controller",
+                must_subclass=BaseModule
+            )
+            if controller_instance:
+                self.local_controllers[component_path] = controller_instance
+                module_instance.local_controller = controller_instance
+                self.logger.info(f"Attached local controller to {component_path}")
 
     def _warmup_thermal_modules(self, thermal_modules: List[Tuple[str, str, BaseModule]]) -> None:
         """Warmup thermal dynamics modules immediately after creation."""
@@ -346,6 +379,7 @@ class BESTOptEnvironment:
 
         # Reset controllers and disturbances
         self._reset_components(self.controllers, "controller")
+        self._reset_components(self.local_controllers, "local_controller")
         self._reset_components(self.disturbance_modules, "disturbance_modules")
 
         # Reset states for each building
@@ -585,19 +619,38 @@ class BESTOptEnvironment:
         if "hvac_systems" in building_modules:
             for hvac_id, hvac_module in building_modules["hvac_systems"].items():
                 try:
+                    supervisory_action = action.thermal
+
+                    if hasattr(hvac_module, 'local_controller'):
+                        # Use local controller to translate supervisory action to component action
+                        local_action = hvac_module.local_controller.step(
+                            supervisory_action=supervisory_action,
+                            state=state.thermal.hvac_systems[hvac_id],
+                            disturbance=disturbance,
+                            timestep=self.current_step
+                        )
+                    else:
+                        # No local controller, pass supervisory action directly
+                        local_action = supervisory_action
                     hvac_module.step(
                         state=state.thermal.hvac_systems[hvac_id],
-                        action=action.thermal,  # Pass thermal action
+                        action=local_action,
                         disturbance=disturbance,
-                        resolution=self.res,
                         timestep=self.current_step
                     )
                 except Exception as e:
                     self.logger.error(f"HVAC {hvac_id} step failed: {e}")
 
+
+
         if "thermal_zones" in building_modules:
             for zone_id, zone_module in building_modules["thermal_zones"].items():
                 try:
+                    # wrap up thermal load
+                    # @TODO need to match ID
+                    thermal_load = (13 - state.thermal.thermal_zones[zone_id].temperature)*hvac_module.current_flow_rate*1.2*1005
+                    # @Need rename to thermal load in action data structure, check later
+                    action.thermal.hvac_power = thermal_load
                     zone_module.step(
                         state=state.thermal.thermal_zones[zone_id],
                         action=action.thermal,  # Pass thermal action

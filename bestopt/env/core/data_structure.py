@@ -316,6 +316,8 @@ class State:
 class ThermalAction:
     """Thermal control actions."""
     hvac_power: float = 0.0
+    supervisory_supply_air_flow_rate: float = 0.0
+    supervisory_supply_air_temperature: float = 0.0
     hvac_mode: HVACMode = HVACMode.OFF
     # @TODO HVAC controls
     # @TODO Thermal storage control
@@ -559,3 +561,30 @@ class Configuration:
     battery: BatteryConfig = field(default_factory=BatteryConfig)
     ev: EVConfig = field(default_factory=EVConfig)
     pv: PVConfig = field(default_factory=PVConfig)
+
+
+@dataclass
+class ControlReference:
+    """Reference signal passed between hierarchical controllers."""
+    signal_type: str  # e.g., "temperature", "flow_rate", "pressure"
+    value: float
+    unit: str  # e.g., "C", "kg/s", "Pa"
+    source: str  # Controller that generated this reference
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ComponentAction:
+    """Action for a specific HVAC component."""
+    component_id: str
+    component_type: str  # e.g., "fan", "coil", "valve", "chiller"
+    parameters: Dict[str, Any] = field(default_factory=dict)  # e.g., {"speed": 0.8, "status": "on"}
+    is_ideal: bool = True  # Whether this component needs further decomposition
+
+
+@dataclass
+class HierarchicalAction:
+    primary_action: ThermalAction = field(default_factory=ThermalAction)
+    component_actions: Dict[str, ComponentAction] = field(default_factory=dict)
+    references: List[ControlReference] = field(default_factory=list)
+    execution_order: List[str] = field(default_factory=list)
