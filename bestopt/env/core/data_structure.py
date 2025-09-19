@@ -319,11 +319,18 @@ class ThermalAction:
     hvac_power: float = 0.0
     hvac_mode: HVACMode = HVACMode.OFF
 
-    pump_flow_sp: Optional[float] = None    # m³/s water flow for circulation    
-    supplyfan_flow_sp: Optional[float] = None
+    pump_flow_sp: Optional[float] = None                # m³/s water flow for circulation    
+    supplyfan_flow_sp: Optional[float] = None           # m³/s air flow for supply fan
     
-    chiller_cooling_kw_sp: float = 0.0        # Cooling demand [kW]
-    chws_temp_c_sp: float = 0.0               # Chilled water supply temp setpoint [°C]
+    chiller_cooling_W_sp: Optional[float] = 0.0        # Cooling demand [kW]
+    chws_temp_c_sp: Optional[float] = 0.0               # Chilled water supply temp setpoint [°C]
+    condenser_temp_c_sp: Optional[float] = 35.0         # Condenser water temp setpoint [°C]
+    
+    cooling_tower_load_W_sp: Optional[float] = 0.0      # Cooling tower load [W]
+    wet_bulb_temp_c: Optional[float] = 25.0             # Wet bulb temperature for cooling tower [°C]
+    
+    ice_tank_mode: Optional[str] = "idle"               # ["charge", "discharge", "idle"]
+    ice_tank_power_W_sp: Optional[float] = 0.0          # Power setpoint in W
     
     # @TODO HVAC controls
     # @TODO Thermal storage control
@@ -634,8 +641,8 @@ class HeatPumpState(ComponentState):
         self.component_type = "heatpump"
 
 @dataclass
-class ChillerState:
-    cooling_kw: float = 0.0              # Chiller cooling output [kW]
+class ChillerState(ComponentState):
+    cooling_W: float = 0.0              # Chiller cooling output [kW]
     cop: float = 0.0                     # Coefficient of Performance
     chws_temp_c: float = 7.0             # Chilled Water Supply Temp [°C]
     chw_flow_m3s: float = 0.0            # Chilled Water Flow Rate [m³/s]
@@ -645,3 +652,44 @@ class ChillerState:
         # identify this component
         self.domain = "thermal"
         self.component_type = "chiller"
+
+@dataclass
+class BoilerState(ComponentState):
+    """Standalone Boiler state."""
+
+    # Inputs
+    inlet_temp_C: float = 0.0
+    flow_m3s: float = 0.0
+    outlet_temp_set_C: float = 0.0
+
+    # Outputs
+    outlet_temp_C: float = 0.0
+    thermal_power_W: float = 0.0
+    fuel_power_W: float = 0.0
+    energy_J_cum: float = 0.0   # cumulative fuel energy
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with taxonomy
+        self.domain = "thermal"
+        self.component_type = "boiler"
+        
+@dataclass
+class CoolingTowerState(ComponentState):
+    heat_rejected_W: float = 0.0
+    outlet_temp_c: float = 0.0
+    fan_power_W: float = 0.0
+    energy_J_cum: float = 0.0
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "cooling_tower"
+        
+@dataclass
+class IceTankState(ComponentState):
+    soc: float = 0.0             # State of charge (0.0 - 1.0)
+    q_actual_W: float = 0.0      # Actual charge (+) or discharge (-) power in Watts
+    energy_J_cum: float = 0.0    # Cumulative energy transferred in Joules
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "ice_tank"
