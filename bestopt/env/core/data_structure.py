@@ -604,6 +604,7 @@ class CoilState(ComponentState):
     air_outlet_temp_C: float = 0.0
     water_inlet_temp_C: float = 0.0
     water_outlet_temp_C: float = 0.0
+    Q_W: float = 0.0
 
     def __post_init__(self):
         # identify this component; keep it consistent with your taxonomy

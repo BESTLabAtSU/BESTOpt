@@ -22,6 +22,7 @@ coil.step(state=cs, action=None, disturbance=Disturbance(), timestep=dt)
 
 print(f"Air:  Tin={30.0:.1f}C  Tout={cs.air_outlet_temp_C:.2f}C")
 print(f"Water:Tin={7.0:.1f}C  Tout={cs.water_outlet_temp_C:.2f}C")
+print(f"Q={cs.Q_W:.2f}W")
 
 
 
