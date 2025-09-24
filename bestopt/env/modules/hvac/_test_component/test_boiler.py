@@ -1,7 +1,7 @@
 # bestopt/env/modules/hvac/test_boiler.py
 
-from .boiler import BoilerModule
-from ...core.data_structure import BoilerState, Disturbance
+from bestopt.env.modules.hvac.component.boiler import BoilerModule
+from bestopt.env.core.data_structure import BoilerState, Disturbance
 
 
 def test_boiler():

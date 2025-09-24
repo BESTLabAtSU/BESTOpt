@@ -1,4 +1,4 @@
-from bestopt.env.modules.hvac.ice_tank import IceTankModule
+from bestopt.env.modules.hvac.component.ice_tank import IceTankModule
 from bestopt.env.core.data_structure import IceTankState, ThermalAction
 
 cfg = {

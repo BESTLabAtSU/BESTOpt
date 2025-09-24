@@ -1,4 +1,4 @@
-from bestopt.env.modules.hvac.chiller import ChillerModule
+from bestopt.env.modules.hvac.component.chiller import ChillerModule
 from bestopt.env.core.data_structure import ChillerState, ThermalAction
 
 cfg = {

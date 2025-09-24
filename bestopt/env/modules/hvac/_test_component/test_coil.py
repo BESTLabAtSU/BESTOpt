@@ -1,4 +1,4 @@
-from bestopt.env.modules.hvac.coil import CoilModule
+from bestopt.env.modules.hvac.component.coil import CoilModule
 from bestopt.env.core.data_structure import CoilState, Disturbance
 
 # Config: pick an effectiveness (0..1) and default properties

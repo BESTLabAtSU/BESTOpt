@@ -5,8 +5,8 @@ Chiller module
 from typing import Dict, Any
 import numpy as np
 
-from ...core.base import BaseModule
-from ...core.data_structure import ThermalAction, ChillerState
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import ThermalAction, ChillerState
 
 
 class ChillerModule(BaseModule):

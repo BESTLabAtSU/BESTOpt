@@ -1,4 +1,4 @@
-from bestopt.env.modules.hvac.cooling_tower import CoolingTowerModule
+from bestopt.env.modules.hvac.component.cooling_tower import CoolingTowerModule
 from bestopt.env.core.data_structure import CoolingTowerState, ThermalAction
 
 cfg = {

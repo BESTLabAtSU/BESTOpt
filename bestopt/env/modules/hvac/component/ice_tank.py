@@ -5,8 +5,8 @@ Ice Tank TES module.
 from typing import Dict, Any
 import numpy as np
 
-from ...core.base import BaseModule
-from ...core.data_structure import ThermalAction, IceTankState
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import ThermalAction, IceTankState
 
 
 class IceTankModule(BaseModule):
