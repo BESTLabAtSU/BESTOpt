@@ -8,7 +8,7 @@ import pandas as pd
 from typing import Dict, Any, Optional, Tuple
 from collections import deque
 import logging
-from modnn.Config import _args  # Using version 3.0.4
+from modnn.Config import _args  # Using version 3.0.7
 from modnn.utils import Mod
 from ...core.base import BaseModule
 from ...core.data_structure import State, Action, Disturbance, BLDGTState
@@ -76,15 +76,27 @@ class ThermalDynamicsModule(BaseModule):
 
             # Load pre-trained model
             model_path = self.config.get("model_path")
-            if model_path:
-                self.mdl.load(model_path)
-                self.logger.info(f"Loaded model from: {model_path}")
-            else:
+            retrain = self.config.get("retrain")
+            if retrain == "On":
                 self.mdl.train()
-                raise ValueError("model_path is required in configuration")
+                self.mdl.test()
+                self.mdl.check()
+                self.mdl.dynamiccheck()
+                self.mdl.check_show()
+            else:
+                if model_path:
+                    self.mdl.load(model_path)
+                    self.logger.info(f"Loaded model from: {model_path}")
+                else:
+                    self.mdl.train()
+                    self.mdl.test()
+                    self.mdl.check()
+                    self.mdl.dynamiccheck()
+                    self.mdl.check_show()
+                    raise ValueError("model_path is required in configuration")
 
-            # Initialize dynamic step function
-            self.dynamic = self.mdl.step_mdl()
+                # Initialize dynamic step function
+                self.dynamic = self.mdl.step_mdl()
 
             # Load data scalers
             self._load_scalers()
@@ -152,6 +164,7 @@ class ThermalDynamicsModule(BaseModule):
             self.logger.info(f"Warmup period: {warmup_start} to {sim_start}")
 
             # Get warmup data from historical dataset
+            # @TODO check the index carefully, I feel the current version has one step mismatch
             warmup_data = self.historical_df.loc[warmup_start:sim_start]
 
             if len(warmup_data) < self.encoder_length:

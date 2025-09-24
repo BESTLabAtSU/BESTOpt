@@ -17,7 +17,6 @@ for timestep in range(env.total_step):
     # Update real-time plot
     plotter.add_data_point(timestep, temperature, hvac_power)
 
-    # Original prints
     print(hvac_power)
     print(temperature)
     print(timestep)
