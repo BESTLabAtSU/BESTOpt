@@ -18,8 +18,8 @@ All performance inputs/outputs are in SI units.
 from typing import Dict, Any
 import numpy as np
 
-from ...core.base import BaseModule
-from ...core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
+from ....core.base import BaseModule
+from ....core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
 
 
 class ChillerCurveBased(BaseModule):

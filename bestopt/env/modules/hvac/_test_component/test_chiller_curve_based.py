@@ -1,5 +1,5 @@
-from bestopt.env.modules.hvac.chiller_curve_based import ChillerCurveBased
-from bestopt.env.core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
+from ..component.chiller_curve_based import ChillerCurveBased
+from ....core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
 
 # Define configuration using default E+ curves
 cfg = {
