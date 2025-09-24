@@ -1,9 +1,12 @@
 # Simplified water–air coil (heating/cooling) with effectiveness method.
 # Writes outlet temperatures IN-PLACE to CoilState. No action is required.
 
-from typing import Dict, Any
-from ...core.base import BaseModule
-from ...core.data_structure import CoilState, Disturbance  # action is unused here
+import numpy as np
+from typing import Dict, Any, Optional
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import CoilState, Disturbance, Disturbance
+
+
 
 class CoilModule(BaseModule):
     """

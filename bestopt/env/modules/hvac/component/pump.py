@@ -3,8 +3,8 @@ Pump module.
 """
 
 from typing import Dict, Any
-from ...core.base import BaseModule
-from ...core.data_structure import ThermalAction, PumpState, Action, Disturbance  
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import ThermalAction, PumpState, Action, Disturbance  
 
 class PumpModule(BaseModule):
     """

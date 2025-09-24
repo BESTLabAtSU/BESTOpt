@@ -1,4 +1,4 @@
-from bestopt.env.modules.hvac.fan import FanModule
+from bestopt.env.modules.hvac.component.fan import FanModule
 from bestopt.env.core.data_structure import FanState, ThermalAction, Disturbance
 
 cfg = {"rated_flow": 2.0, "rated_power_W": 4000.0, "power_exponent": 3.0, "enable_history": True}

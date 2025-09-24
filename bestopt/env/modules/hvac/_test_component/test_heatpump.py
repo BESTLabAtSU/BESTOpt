@@ -1,7 +1,7 @@
 # bestopt/env/modules/hvac/test_heatpump.py
 
-from .heatpump import HeatPumpModule
-from ...core.data_structure import HeatPumpState, Disturbance
+from bestopt.env.modules.hvac.component.heatpump import HeatPumpModule
+from bestopt.env.core.data_structure import HeatPumpState, Disturbance
 
 def test_heatpump():
     config = {"capacity_W": 4000, "cop": 3.5}

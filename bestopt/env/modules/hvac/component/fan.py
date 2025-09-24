@@ -1,86 +1,100 @@
-import numpy as np
-from typing import Dict, Any, Optional
-from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import HVACState, ThermalAction, Disturbance
+"""
+Ideal HVAC module.
+"""
 
+from typing import Dict, Any
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import ThermalAction, FanState, Action, Disturbance  # 'state' not used here
 
 class FanModule(BaseModule):
+    """
+    Supply fan module that CONSUMES an airflow setpoint and UPDATES a FanState in place.
 
-    def __init__(self, config: Dict[str, Any], name: str = "FanModule"):
-        """Initialize fan module with configuration."""
+    Input (from action): ThermalAction.supplyfan_flow_sp  [m^3/s]
+
+    Output (written in-place to FanState):
+    - state.flow_m3s
+    - state.power_W
+    - state.energy_J_cum  (accumulated over steps)
+
+    Model
+    - Fan affinity law:  P = P_rated * (Q / Q_rated)^exponent
+    - Config keys:
+        * rated_flow_m3s  (or rated_flow)  Q_rated [m^3/s]
+        * rated_power_W                   P at Q_rated [W]
+        * power_exponent (default 3.0)     cube-law exponent
+
+    State
+    - Expects a FanState instance passed as `state`.
+        * state.airflow_m3s     : echoed airflow [m^3/s]
+        * state.power_W        : electric power via affinity law [W]
+        * state.energy_J_cum  : accumulated energy over steps [W]
+
+    Action
+        No action.
+
+    """
+
+    def __init__(self, config: Dict[str, Any], name: str = "supply_fan"):
         super().__init__(config, name)
+        q_rated = config.get("rated_flow_m3s", config.get("rated_flow", 1.0))
+        self.rated_flow_m3s: float = float(q_rated)                 
+        self.rated_power_W:  float = float(config.get("rated_power_W", 1000.0)) 
+        self.power_exponent: float = float(config.get("power_exponent", 3.0))    
 
-        # Fan configuration
-        self.fan_type = config.get("fan_type", "ideal")  # ideal, constant, staged, variable
-
-        if self.fan_type == "constant":
-            self.design_air_flow_rate = config.get("design_air_flow_rate", 0.5)
-
-        elif self.fan_type == "staged":
-            self.stage_air_flow_rate = config.get("stage_air_flow_rate")
-
-        elif self.fan_type == "variable":
-            self.min_air_flow_rate = config.get("min_air_flow_rate", 0.1)
-            self.max_air_flow_rate = config.get("max_air_flow_rate", 1.0)
-
-        #@TODO need add some paras to calculate the fan power
+        if self.rated_flow_m3s <= 0.0:
+            self.logger.warning(f"{self.name}: rated_flow_m3s <= 0, power will be forced to 0.")
 
     def initialize(self) -> None:
-        """Initialize the fan module."""
-        pass
+        self._initialized = True
 
-    def step(self, state: HVACState, action: Any, disturbance: Disturbance,
-             timestep: float) -> None:
+    def step(
+        self,
+        state: "FanState",
+        action: Any,      # not used
+        disturbance: "Disturbance",
+        timestep: float
+    ) -> Dict[str, Any]:
         """
-        Execute fan dynamics for one timestep.
+        One step (SI):
+          - read airflow setpoint [m^3/s]
+          - compute power [W] via affinity law
+          - accumulate step energy [J] = W * s
+          - write results IN-PLACE into FanState
         """
-        try:
-            # Determine actual fan action based on fan type
-            if self.local_controller:
-                fan_action = action
-            else:
-                print("warning, no local fan controller defined")
+        
+        # 1) airflow setpoint [m^3/s]
+        sp = getattr(action, "supplyfan_flow_sp", None)
+        if sp is None and hasattr(action, "thermal"):
+            sp = getattr(action.thermal, "supplyfan_flow_sp", None)
 
-            # Execute fan dynamics based on type
-            if self.fan_type == "ideal":
-                self._execute_ideal_fan(fan_action, state)
-            elif self.fan_type == "constant":
-                self._execute_constant_fan(fan_action, state)
-            elif self.fan_type == "staged":
-                self._execute_staged_fan(fan_action, state)
-            elif self.fan_type == "variable":
-                self._execute_variable_fan(fan_action, state)
-            else:
-                self.logger.warning(f"Unknown fan type: {self.fan_type}")
+        flow = 0.0 if sp is None else float(sp)
+        if flow < 0.0:
+            self.logger.warning(f"{self.name}: negative flow received; clamped to 0.0")
+            flow = 0.0
 
-            # Update state with fan outputs
-            state.supply_air_flow_rate = self.current_flow_rate
-            #state.fan_power = self.current_power
+        # 2) power via affinity law [W]
+        if self.rated_flow_m3s > 0.0 and self.rated_power_W >= 0.0:
+            ratio = flow / self.rated_flow_m3s
+            power_W = self.rated_power_W * (ratio ** self.power_exponent)
+        else:
+            power_W = 0.0
 
-        except Exception as e:
-            self.logger.error(f"Error in fan step: {e}")
+        # 3) step energy [J]; timestep in seconds
+        energy_J = power_W * (timestep if (timestep and timestep > 0.0) else 0.0)
 
-    def _execute_ideal_fan(self, action: Dict[str, Any], state: HVACState) -> None:
-        pass
+        # 4) in-place update (pure SI)
+        state.airflow_m3s = flow
+        state.power_W = power_W
+        state.energy_J_cum = getattr(state, "energy_J_cum", 0.0) + energy_J
 
-    def _execute_constant_fan(self, action: Dict[str, Any], state: HVACState) -> None:
-        pass
+        # 5) optional history
+        self._record_state({"airflow_m3s": flow, "power_W": power_W, "energy_J": energy_J})
+        
+        return {}
 
-    def _execute_staged_fan(self, action: Dict[str, Any], state: HVACState) -> None:
-        """
-        """
-        self.current_flow_rate = self.stage_air_flow_rate[action['stage']]
-
-    def _execute_variable_fan(self, action: Dict[str, Any], state: HVACState) -> None:
-        pass
 
     def reset(self) -> None:
-        """Reset fan to initial state."""
-        pass
-        self.logger.debug(f"Reset fan: {self.name}")
-
-    def get_state(self) -> Dict[str, Any]:
-        pass
-
-    def set_state(self, state: Dict[str, Any]) -> None:
-        pass
+        self._state_history.clear()
+        self._initialized = False
+        self.initialize()
