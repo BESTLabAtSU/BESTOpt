@@ -26,6 +26,34 @@ class ChillerModule(BaseModule):
         - chw_flow_m3s                        : CHW flow rate [m³/s]
         - power_W                             : Electrical power consumption [W]
         - energy_J_cum                        : Cumulative energy consumption [J]
+        
+    Model:
+      - Carnot-based COP with fixed effectiveness factor:
+          COP = η_carnot * (T_cw / (T_cw - T_chw)), using Kelvin temps
+      - Cooling output calculated as:
+          Q = m_dot * c_p * (T_return - T_supply)
+      - Power = Q / COP
+      - All temperatures are assumed to be in °C and converted to K internally
+
+    State:
+      - Reads from:
+          * CoilState.water_outlet_temp_C
+          * PumpState.waterflow_m3s
+          * ThermalAction.chws_temp_c_sp
+          * ThermalAction.condenser_temp_c_sp
+      - Writes IN-PLACE to ChillerState:
+          * ChillerState.cooling_W
+          * ChillerState.cop
+          * ChillerState.chws_temp_c
+          * ChillerState.chw_flow_m3s
+          * ChillerState.power_W
+          * ChillerState.energy_J_cum
+
+    Action:
+      - Expects ThermalAction instances with:
+          * chws_temp_c_sp
+          * condenser_temp_c_sp
+      - Indirectly affects condenser-side heat rejection (used in cooling tower model)
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "chiller"):

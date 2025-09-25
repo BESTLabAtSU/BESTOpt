@@ -19,7 +19,7 @@ class CoolingTowerModule(BaseModule):
     Cooling Tower module that rejects condenser heat and calculates
     both fan power and condenser pump power.
 
-    Inputs:
+    Inputs (from ChillerState, ThermalAction, WeatherData):
         - ChillerState.cooling_W                  : Chiller cooling load [W]
         - ChillerState.cop                        : Chiller COP [-]
         - ThermalAction.condenser_temp_c_sp       : CW supply temp setpoint [°C] (to chiller)
@@ -33,6 +33,38 @@ class CoolingTowerModule(BaseModule):
         - fan_power_W           : Tower fan power [W]
         - pump_power_W          : Condenser pump power [W]
         - energy_J_cum          : Cumulative energy (fan + pump) [J]
+        
+    Model:
+      - Rejects condenser heat: Q_rejected = Q_chiller + Power_chiller
+      - Uses approach temperature to estimate CW supply temp:
+            T_supply = T_wetbulb + approach
+            approach = min_approach + (1 − load_ratio) × (max_approach − min_approach)
+      - Flow rate from energy balance: Q = m * cp * ΔT
+      - Fan power ∝ (load_ratio)^3
+      - Pump power ∝ flow rate (W per m³/s)
+
+    State:
+      - Reads from:
+          * chiller_state.cooling_W
+          * chiller_state.cop
+          * weather.outdoor_wet_bulb_temperature
+          * action.condenser_temp_c_sp
+      - Writes IN-PLACE:
+          * state.cw_supply_temp_c
+          * state.cw_return_temp_c
+          * state.cw_flow_m3s
+          * state.heat_rejected_W
+          * state.fan_power_W
+          * state.pump_power_W
+          * state.energy_J_cum
+
+    Action:
+      - Expects a ThermalAction instance with at least:
+          * condenser_temp_c_sp
+          
+    Disturbance:
+      - Expects a WeatherData instance with at least:
+          * wet_bulb_temp_c
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "cooling_tower"):
