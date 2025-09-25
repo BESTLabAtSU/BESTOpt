@@ -710,6 +710,7 @@ class CoolingTowerState(ComponentState):
     cw_return_temp_c: float = 0.0
     cw_flow_m3s: float = 0.0
     fan_power_W: float = 0.0
+    pump_power_W: float = 0.0
     energy_J_cum: float = 0.0
 
     def __post_init__(self):

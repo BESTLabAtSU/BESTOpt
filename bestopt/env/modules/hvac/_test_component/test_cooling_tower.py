@@ -44,7 +44,7 @@ for t in range(24):
     print(f"Step {t:02d} | Q_rej={tower_state.heat_rejected_W:6.0f} W | CW_out={tower_state.cw_supply_temp_c:4.1f}°C | "
           f"CW_in={tower_state.cw_return_temp_c:4.1f}°C | "
           f"Flow={tower_state.cw_flow_m3s:.4f} m³/s | Fan={tower_state.fan_power_W:5.0f} W | "
-          f"E_cum={tower_state.energy_J_cum:.0f} J")
+          f"Pump={tower_state.pump_power_W:4.0f} W | E_cum={tower_state.energy_J_cum:.0f} J")
 
 # === Summary ===
 print("\nTotal fan energy consumed (J):", round(tower_state.energy_J_cum, 2))
