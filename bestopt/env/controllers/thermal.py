@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Any, Optional
 from ..core.base import BaseModule
 from ..core.data_structure import State, Action, Disturbance, Observation, ThermalAction, HVACMode
-
+from ..core.constants import AIR_DENSITY, AIR_SPECIFIC_HEAT
 
 class SupervisoryController(BaseModule):
     """
@@ -35,11 +35,13 @@ class SupervisoryController(BaseModule):
 
         # Control states
         self.current_hvac_power = 0.0
+        self.current_thermal_load = 0.0
         self.last_mode = HVACMode.OFF
 
     def initialize(self) -> None:
         """Initialize the controller."""
         self.current_hvac_power = 0.0
+        self.current_thermal_load = 0.0
         self.last_mode = HVACMode.OFF
         self.hvac_is_on = False
         self.logger.info(f"Initialized thermal controller: {self.name}")
@@ -85,23 +87,32 @@ class SupervisoryController(BaseModule):
                 heating_setpoint=heating_setpoint,
                 timestep=timestep
             )
-
+            
             self.current_supply_air_flow_rate = supply_air_flow_rate
             self.current_supply_air_temperature = supply_air_temperature
+
+            # Compute delivered thermal load
+            thermal_load = self._calculate_thermal_load(
+                flow_rate=supply_air_flow_rate,
+                supply_air_temp=supply_air_temperature,
+                room_temp=current_temp
+            )
+            self.current_thermal_load = thermal_load
 
             # Create thermal action
             thermal_action = ThermalAction()
             thermal_action.supervisory_supply_air_flow_rate = supply_air_flow_rate
             thermal_action.supervisory_supply_air_temperature = supply_air_temperature
+            thermal_action.thermal_load = thermal_load
             #@ TODO update the following function
-            # thermal_action.hvac_mode = self._determine_hvac_mode(hvac_power)
+            thermal_action.hvac_mode = self._determine_hvac_mode(thermal_load)
 
             return thermal_action
 
         except Exception as e:
             self.logger.error(f"Error in thermal controller step: {e}")
             # Return safe default action
-            return ThermalAction(hvac_power=0.0)
+            return ThermalAction((hvac_power=0.0, thermal_load=0.0)
 
     def _get_active_setpoints(self, occupancy, disturbance) -> tuple:
         """Determine active setpoints based on occupancy and schedule."""
@@ -136,7 +147,7 @@ class SupervisoryController(BaseModule):
         elif self.mode == HVACMode.AUTO:
             supply_air_flow_rate, supply_air_temperature = self._auto_control(cooling_error, heating_error, can_change_state)
         else:  # OFF mode
-            supply_air_flow_rate, supply_air_temperature = 0.0
+            supply_air_flow_rate, supply_air_temperature = 0.0, None
 
         return supply_air_flow_rate, supply_air_temperature
 
@@ -212,6 +223,7 @@ class SupervisoryController(BaseModule):
     def reset(self) -> None:
         """Reset controller to initial state."""
         self.current_hvac_power = 0.0
+        self.current_thermal_load = 0.0
         self.last_mode = HVACMode.OFF
         self.hvac_is_on = False
         self.last_state_change_time = 0
@@ -222,6 +234,7 @@ class SupervisoryController(BaseModule):
         """Get current controller state."""
         return {
             'current_hvac_power': self.current_hvac_power,
+            'current_thermal_load': self.current_thermal_load,
             'hvac_is_on': self.hvac_is_on,
             'last_state_change_time': self.last_state_change_time,
             'mode': self.mode.value
@@ -230,7 +243,35 @@ class SupervisoryController(BaseModule):
     def set_state(self, state: Dict[str, Any]) -> None:
         """Set controller state."""
         self.current_hvac_power = state.get('current_hvac_power', 0.0)
+        self.current_thermal_load = state.get('current_thermal_load', 0.0)
         self.hvac_is_on = state.get('hvac_is_on', False)
         self.last_state_change_time = state.get('last_state_change_time', 0)
         if 'mode' in state:
             self.mode = HVACMode(state['mode'])
+    
+    def _calculate_thermal_load(
+        self,
+        flow_rate: float,
+        supply_air_temp: Optional[float],
+        room_temp: float,
+        air_density: float = AIR_DENSITY,   # kg/m³
+        cp: float = AIR_SPECIFIC_HEAT          # J/kg·K
+    ) -> float:
+        """
+        Calculate heating/cooling load based on airflow and temperature difference.
+
+        Args:
+            flow_rate: Volumetric air flow rate [m³/s]
+            supply_air_temp: Supply air temperature [°C]
+            room_temp: Current room air temperature [°C]
+            air_density: Air density [kg/m³] (default 1.2)
+            cp: Specific heat capacity of air [J/kg·K] (default 1005)
+
+        Returns:
+            Thermal load [W] (positive = heating, negative = cooling)       
+        """
+        if supply_air_temp is None or flow_rate <= 0:
+            return 0.0
+        deltaT = supply_air_temp - room_temp
+        mass_flow = air_density * flow_rate
+        return mass_flow * cp * deltaT

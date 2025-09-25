@@ -55,7 +55,7 @@ class BaseModule(ABC):
         pass
 
     @abstractmethod
-    def step(self, state: State, action: Action,
+    def step(self, state: State, action: Action, 
              disturbance: Disturbance, timestep: float) -> Dict[str, Any]:
         """Execute one simulation timestep.
 
