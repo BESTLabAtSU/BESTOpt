@@ -29,7 +29,7 @@ class WeatherModule(BaseModule):
     def initialize(self) -> None:
         """Initialize weather data source."""
         file_path = self.config.get("file_path")
-
+        self.sim_start_time = self.config.get("simulation_start_time")
         if file_path:
             try:
                 if not os.path.isfile(file_path):
@@ -67,10 +67,7 @@ class WeatherModule(BaseModule):
     def _load_weather_file(self, file_path: str) -> None:
         """Load weather data from CSV or EPW file into self.weather_data."""
         if file_path.lower().endswith(".csv"):
-            df = pd.read_csv(file_path)
-            # If first column is a datetime index, respect it; otherwise try to parse
-            if df.columns.size >= 1 and pd.api.types.is_datetime64_any_dtype(df.iloc[:, 0]):
-                df.set_index(df.columns[0], inplace=True)
+            df = pd.read_csv(file_path, index_col=0)
             # Ensure required columns exist
             missing = REQUIRED_COLS_CSV - set(df.columns)
             if missing:
@@ -115,8 +112,11 @@ class WeatherModule(BaseModule):
             raise ValueError(f"Unsupported weather file format: {file_path}")
 
     def _get_weather_from_data(self, current_step: int) -> WeatherData:
-        row = self.weather_data.iloc[current_step]
-        ot = float(row["outdoor_temperature"])
+        self.weather_data['Time'] = pd.to_datetime(self.weather_data['Time'])
+        sim_start = pd.Timestamp("2023-08-01 00:00:00")
+        sim_data = self.weather_data[self.weather_data['Time'] >= sim_start]
+        row = sim_data.iloc[current_step]
+        ot = (float(row["outdoor_temperature"])-32)*5/9  # @TODO need to use standard unit, use hard coding for now
         sr = float(row["solar_radiation"])
         return WeatherData(outdoor_temperature=ot, solar_radiation=sr)
 

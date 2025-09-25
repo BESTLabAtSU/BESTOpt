@@ -13,25 +13,32 @@ class WorkingRealTimePlotter:
         self.timesteps = deque(maxlen=max_points)
         self.temperatures = deque(maxlen=max_points)
         self.hvac_powers = deque(maxlen=max_points)
+        self.cooling_setpoints = deque(maxlen=max_points)
+        self.heating_setpoints = deque(maxlen=max_points)
 
         # Create the plot
         plt.ion()  # Interactive mode on
-        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(12, 8))
+        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(4, 3))
         self.fig.canvas.manager.set_window_title(window_title)
 
         # Initialize empty plots
-        self.temp_line, = self.ax1.plot([], [], 'b-', linewidth=2, label='Temperature')
-        self.power_line, = self.ax2.plot([], [], 'r-', linewidth=2, label='HVAC Power')
+        self.temp_line, = self.ax1.plot([], [], 'b-', linewidth=1.5, label='Temperature')
+        # NEW: step-style dashed gray lines for setpoints
+        self.cool_line, = self.ax1.plot([], [], '--', linewidth=1.5, label='Cooling Setpoint',
+                                        color='gray', drawstyle='steps-post')
+        self.heat_line, = self.ax1.plot([], [], '--', linewidth=1.5, label='Heating Setpoint',
+                                        color='gray', drawstyle='steps-post')
+        self.power_line, = self.ax2.plot([], [], 'r-', linewidth=1.5, label='HVAC Thermal Load',)
 
         # Setup axes
-        self.ax1.set_title('Zone Temperature', fontsize=12)
-        self.ax1.set_ylabel('Temperature (°C)', fontsize=11)
+        self.ax1.set_title('Zone Temperature', fontsize=7)
+        self.ax1.set_ylabel('Temperature (°C)', fontsize=7)
         self.ax1.grid(True, alpha=0.3)
         self.ax1.legend()
 
-        self.ax2.set_title('HVAC Power Consumption', fontsize=12)
-        self.ax2.set_xlabel('Timestep', fontsize=11)
-        self.ax2.set_ylabel('Power (W)', fontsize=11)
+        self.ax2.set_title('HVAC Thermal Load', fontsize=7)
+        self.ax2.set_xlabel('Timestep', fontsize=7)
+        self.ax2.set_ylabel('Thermal Load (W)', fontsize=7)
         self.ax2.grid(True, alpha=0.3)
         self.ax2.legend()
 
@@ -44,48 +51,61 @@ class WorkingRealTimePlotter:
         print("✓ Real-time plotter initialized and window displayed")
         print("  Window should be visible on your screen now")
 
-    def add_data_point(self, timestep, temperature, hvac_power):
+    def add_data_point(self, timestep, temperature, hvac_power,
+                       supervisory_cooling_setpoint=None, supervisory_heating_setpoint=None):
         """Add a data point and update the plot"""
         # Add data
         self.timesteps.append(timestep)
         self.temperatures.append(temperature)
         self.hvac_powers.append(hvac_power)
-
+        self.cooling_setpoints.append(
+            float(supervisory_cooling_setpoint) if supervisory_cooling_setpoint is not None else np.nan
+        )
+        self.heating_setpoints.append(
+            float(supervisory_heating_setpoint) if supervisory_heating_setpoint is not None else np.nan
+        )
         # Convert to lists for plotting
         x_data = list(self.timesteps)
         temp_data = list(self.temperatures)
         power_data = list(self.hvac_powers)
+        cool_data = np.array(self.cooling_setpoints, dtype=float)
+        heat_data = np.array(self.heating_setpoints, dtype=float)
 
         # Update the lines
         self.temp_line.set_data(x_data, temp_data)
         self.power_line.set_data(x_data, power_data)
+        self.temp_line.set_data(x_data, temp_data)
+        self.power_line.set_data(x_data, power_data)
+        self.cool_line.set_data(x_data, cool_data)
+        self.heat_line.set_data(x_data, heat_data)
 
         # Auto-scale the axes
         if len(x_data) > 1:
-            # X-axis
-            self.ax1.set_xlim(min(x_data), max(x_data))
-            self.ax2.set_xlim(min(x_data), max(x_data))
+            # X
+            xmin, xmax = min(x_data), max(x_data)
+            self.ax1.set_xlim(xmin, xmax)
+            self.ax2.set_xlim(xmin, xmax)
 
-            # Temperature Y-axis
-            temp_min, temp_max = min(temp_data), max(temp_data)
-            temp_margin = max(0.1, (temp_max - temp_min) * 0.1)
-            self.ax1.set_ylim(temp_min - temp_margin, temp_max + temp_margin)
+            # Y for temperature: include setpoints (ignore NaNs)
+            y_candidates = np.array(temp_data, dtype=float)
+            all_temp_like = np.concatenate([y_candidates, cool_data, heat_data])
+            tmin = np.nanmin(all_temp_like)
+            tmax = np.nanmax(all_temp_like)
+            margin = max(0.1, (tmax - tmin) * 0.1)
+            self.ax1.set_ylim(tmin - margin, tmax + margin)
 
-            # Power Y-axis
-            power_min, power_max = min(power_data), max(power_data)
-            if power_max == power_min:
-                # Handle case where all values are the same (like all zeros)
-                center = power_min
+            # Y for power
+            pmin, pmax = min(power_data), max(power_data)
+            if pmax == pmin:
+                center = pmin
                 self.ax2.set_ylim(center - 1, center + 1)
             else:
-                power_margin = (power_max - power_min) * 0.1
-                self.ax2.set_ylim(power_min - power_margin, power_max + power_margin)
+                pmargin = (pmax - pmin) * 0.1
+                self.ax2.set_ylim(pmin - pmargin, pmax + pmargin)
 
-        # Force the plot to update
+            # Refresh
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-
-        # Small pause to allow GUI to update
         plt.pause(0.001)
 
         # Debug output every 10 points
@@ -99,14 +119,14 @@ class WorkingRealTimePlotter:
         if len(self.timesteps) > 0:
             # Final statistics
             temp_stats = f"Temperature: {min(self.temperatures):.1f} to {max(self.temperatures):.1f}°C (avg: {np.mean(self.temperatures):.1f}°C)"
-            power_stats = f"HVAC Power: {min(self.hvac_powers):.1f} to {max(self.hvac_powers):.1f}W (avg: {np.mean(self.hvac_powers):.1f}W)"
+            power_stats = f"HVAC Thermal Load: {min(self.hvac_powers):.1f} to {max(self.hvac_powers):.1f}W (avg: {np.mean(self.hvac_powers):.1f}W)"
 
             print(f"  {temp_stats}")
             print(f"  {power_stats}")
 
             # Check for potential issues
             if all(p == 0 for p in self.hvac_powers):
-                print("  ⚠️  NOTE: HVAC power was always 0 - system may not be active")
+                print("  ⚠️  NOTE: HVAC Thermal Load was always 0 - system may not be active")
 
         # Turn off interactive mode and show final plot
         plt.ioff()

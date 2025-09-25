@@ -13,9 +13,10 @@ for timestep in range(env.total_step):
     # Extract data
     hvac_power = env.actions['SFH_1'].thermal.hvac_power
     temperature = env.states['SFH_1'].thermal.thermal_zones['zone0'].temperature
+    supervisory_cooling_setpoint = env.actions['SFH_1'].thermal.supervisory_cooling_setpoint
 
     # Update real-time plot
-    plotter.add_data_point(timestep, temperature, hvac_power)
+    plotter.add_data_point(timestep, temperature, hvac_power, supervisory_cooling_setpoint)
 
     print(hvac_power)
     print(temperature)

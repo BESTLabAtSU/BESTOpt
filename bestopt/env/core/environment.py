@@ -19,6 +19,7 @@ import torch
 import random
 import os
 import numpy as np
+import pandas as pd
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -71,7 +72,11 @@ class BESTOptEnvironment:
             )
 
         self.simulation_start_time = configuration.get('environment', {}).get('parameters', {}).get(
-            'simulation_start_time', '2024-01-01 00:00:00')
+            'simulation_start_time')
+        historical_data_path = configuration.get('environment', {}).get('parameters', {}).get(
+            'historical_data_path')
+        df = pd.read_csv(historical_data_path, index_col=0)
+        self.sim_data = df.loc[self.simulation_start_time:]
 
         # Get building configurations
         buildings_config = self.config.get('buildings', {})
@@ -298,8 +303,9 @@ class BESTOptEnvironment:
                         )
                     elif component_type == 'thermal_zones':
                         # Initialize with default or config values
-                        zone_config = component_config.get('parameters', {})
-                        initial_temp = zone_config.get('initial_temperature', 22.0)
+                        initial_temp = self.sim_data["temp_room"].values[0]
+                        # zone_config = component_config.get('parameters', {})
+                        # initial_temp = zone_config.get('initial_temperature', 22.0)
                         state.thermal.thermal_zones[component_id] = BLDGTState(
                             component_id=component_id,
                             temperature=initial_temp
@@ -695,7 +701,6 @@ class BESTOptEnvironment:
         obs.day_of_year = int((self.current_step * self.res / 86400)) % 365 + 1
 
         # Add forecasts (these would come from disturbance modules)
-        # This is a simplified example - you'd get these from forecast modules
         obs.outdoor_temp_forecast = [disturbance.weather.outdoor_temperature] * 4
         obs.solar_forecast = [disturbance.weather.solar_radiation] * 4
         obs.price_forecast = [disturbance.prices.electricity_price] * 4

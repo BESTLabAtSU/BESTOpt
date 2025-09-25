@@ -40,7 +40,7 @@ cm.add_building_component(
     "SFH_1", "hvac_systems", "fan",
     parameters={
         "fan_type": "staged",  # Can be: ideal, constant, staged, variable
-        "stage_air_flow_rate": {"stage1":0.2, "stage2":0.4, "stage3":0.6, "stage4":0.8},
+        "stage_air_flow_rate": {"stage1": 0.0, "stage2": 0.2, "stage3": 0.4, "stage4": 0.6, "stage5": 0.8},
     },
     class_path="bestopt.env.modules.hvac.fan.FanModule"
 )
@@ -57,10 +57,10 @@ cm.add_controller(
 
 cm.add_local_controller(
     "SFH_1.hvac_systems.fan",  # Component path
-    # @TODO it should ahve same pare as parent's module
+    # @TODO it should have same pare as parent's module
     parameters={
         "fan_type": "staged",  # Can be: ideal, constant, staged, variable
-        "stage_air_flow_rate": {"stage1": 0.2, "stage2": 0.4, "stage3": 0.6, "stage4": 0.8},
+        "stage_air_flow_rate": {"stage1": 0.0, "stage2": 0.2, "stage3": 0.4, "stage4": 0.6, "stage5": 0.8},
     },
     class_path="bestopt.env.controllers.hvac.fan.FanLocalController"
 )
@@ -70,9 +70,20 @@ cm.add_disturbance(
     "weather",
     parameters={
         "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/weather/weather.csv",
+        "simulation_start_time": "2023-08-01 00:00:00", # TODO The same parameters should be handled by one variable
     },
     class_path="bestopt.env.disturbances.weather.WeatherModule"
 )
+
+cm.add_disturbance(
+    "occupancy",
+    parameters={
+        "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/weather/weather.csv",
+        "simulation_start_time": "2023-08-01 00:00:00", # TODO The same parameters should be handled by one variable
+    },
+    class_path="bestopt.env.disturbances.occupancy.OccupancyModule"
+)
+
 
 cm.add_environment(
     parameters={
@@ -80,13 +91,14 @@ cm.add_environment(
         "duration": 86400,   # 24 hours in seconds
         "enable_history": True,
         "logging_level": "INFO",
-        "simulation_start_time": "2023-08-01 00:00:00"
+        "simulation_start_time": "2023-08-01 00:00:00",
+        "historical_data_path":"/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv"
     },
     class_path="bestopt.environment.BestOptEnvironment"
 )
 cm.select_buildings(["SFH_1"])
 cm.select_controller_for_building_domain("SFH_1", "thermal", "SFH_1_THERMAL_Supervisory")
-cm.select_disturbances(["weather"])
+cm.select_disturbances(["weather", "occupancy"])
 cm.select_environment()
 warnings = cm.validate_configuration()
 if warnings:

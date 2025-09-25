@@ -23,8 +23,8 @@ class SupervisoryController(BaseModule):
 
         # Comfort settings
         # @TODO These settings should be more dynamic in the future
-        self.setpoint_cooling = config.get("setpoint_cooling", 21.0)  # °C
-        self.setpoint_heating = config.get("setpoint_heating", 19.0)  # °C
+        self.setpoint_cooling = config.get("setpoint_cooling", 24.0)  # °C
+        self.setpoint_heating = config.get("setpoint_heating", 18.0)  # °C
         self.deadband = config.get("deadband", 0.5)  # °C
 
         # HVAC capacity settings
@@ -40,6 +40,8 @@ class SupervisoryController(BaseModule):
     def initialize(self) -> None:
         """Initialize the controller."""
         self.current_hvac_power = 0.0
+        self.current_supply_air_flow_rate = 0.0
+        self.current_supply_air_temperature = 13
         self.last_mode = HVACMode.OFF
         self.hvac_is_on = False
         self.logger.info(f"Initialized thermal controller: {self.name}")
@@ -72,7 +74,8 @@ class SupervisoryController(BaseModule):
                 current_temp = 22.0  # Default
 
             # Get occupancy information
-            occupancy = disturbance.occupancy
+            occupancy = disturbance.occupancy.occupancy_fraction
+
 
             # Determine active setpoints based on occupancy
             cooling_setpoint, heating_setpoint = self._get_active_setpoints(
@@ -93,6 +96,8 @@ class SupervisoryController(BaseModule):
             thermal_action = ThermalAction()
             thermal_action.supervisory_supply_air_flow_rate = supply_air_flow_rate
             thermal_action.supervisory_supply_air_temperature = supply_air_temperature
+            thermal_action.supervisory_cooling_setpoint = cooling_setpoint
+            thermal_action.supervisory_heating_setpoint = heating_setpoint
             #@ TODO update the following function
             # thermal_action.hvac_mode = self._determine_hvac_mode(hvac_power)
 
@@ -109,15 +114,13 @@ class SupervisoryController(BaseModule):
         base_heating = self.setpoint_heating
 
         # Check if building is occupied
-        is_occupied = getattr(occupancy, 'is_occupied', True)
-
-        # Setback during unoccupied periods
-        if not is_occupied:
-            cooling_setpoint = base_cooling + 2.0  # Allow warmer
-            heating_setpoint = base_heating - 2.0  # Allow cooler
-        else:
+        if occupancy>0:
+            # occupied
             cooling_setpoint = base_cooling
             heating_setpoint = base_heating
+        else:
+            cooling_setpoint = base_cooling + 2.0
+            heating_setpoint = base_heating - 2.0
 
         return cooling_setpoint, heating_setpoint
 
@@ -136,28 +139,34 @@ class SupervisoryController(BaseModule):
         elif self.mode == HVACMode.AUTO:
             supply_air_flow_rate, supply_air_temperature = self._auto_control(cooling_error, heating_error, can_change_state)
         else:  # OFF mode
-            supply_air_flow_rate, supply_air_temperature = 0.0
+            supply_air_flow_rate, supply_air_temperature = 0.0, 0.0
 
         return supply_air_flow_rate, supply_air_temperature
 
     def _cooling_control(self, cooling_error: float, can_change_state: bool) -> float:
         """Cooling-only control logic."""
-        if cooling_error > self.deadband:
-            # Too warm - start/increase cooling
-            if cooling_error > 2 * self.deadband:
-                supply_air_flow_rate = 1
-                supply_air_temperature = 13
+        if self.current_supply_air_flow_rate == 0.0:
+            if cooling_error>self.deadband:
+                self.current_supply_air_flow_rate = 0.5
             else:
-                supply_air_flow_rate = 0.5
-                supply_air_temperature = 13
-        elif cooling_error < -self.deadband and can_change_state:
-            supply_air_flow_rate = 0.5
-            supply_air_temperature = None
+                self.current_supply_air_flow_rate = 0.0
+        elif self.current_supply_air_flow_rate == 0.5:
+            if cooling_error>self.deadband*2:
+                self.current_supply_air_flow_rate = 1
+            elif cooling_error<self.deadband*-1:
+                self.current_supply_air_flow_rate = 0
+            else:
+                self.current_supply_air_flow_rate = 0.5
         else:
-            supply_air_flow_rate = self.current_supply_air_flow_rate
-            supply_air_temperature = self.current_supply_air_temperature
+            if cooling_error<self.deadband:
+                self.current_supply_air_flow_rate = 0.5
+            elif cooling_error<self.deadband*-1:
+                self.current_supply_air_flow_rate = 0
+            else:
+                self.current_supply_air_flow_rate = 1
 
-        return supply_air_flow_rate, supply_air_temperature
+        self.supply_air_temperature = 13
+        return self.current_supply_air_flow_rate, self.supply_air_temperature
 
     # @Revise heating, auto later
     def _heating_control(self, heating_error: float, can_change_state: bool) -> float:

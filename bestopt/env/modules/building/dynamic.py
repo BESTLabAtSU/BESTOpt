@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import pickle
 import pandas as pd
+from datetime import timedelta
 from typing import Dict, Any, Optional, Tuple
 from collections import deque
 import logging
@@ -154,7 +155,7 @@ class ThermalDynamicsModule(BaseModule):
             sim_start_time: Start time of simulation (e.g., "2024-01-01 00:00:00")
         """
         try:
-            sim_start = pd.to_datetime(sim_start_time)
+            sim_start = pd.to_datetime(sim_start_time) - timedelta(minutes=15)
             self.logger.info(f"Preparing for simulation starting at: {sim_start}")
 
             # Calculate warmup period (encoder_length timesteps before simulation start)
@@ -165,6 +166,7 @@ class ThermalDynamicsModule(BaseModule):
 
             # Get warmup data from historical dataset
             # @TODO check the index carefully, I feel the current version has one step mismatch
+            # Fixed
             warmup_data = self.historical_df.loc[warmup_start:sim_start]
 
             if len(warmup_data) < self.encoder_length:

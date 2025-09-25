@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 import logging
 
 from ..core.base import BaseModule
+from ..core.data_structure import OccupancyData
 from ..core.data_structure import State, Action, Disturbance
 
 
@@ -32,14 +33,19 @@ class OccupancyModule(BaseModule):
             name: Module name
         """
         super().__init__(config, name)
-        pass
+        self.current_occ = OccupancyData()
 
     def initialize(self) -> None:
-        pass
+        leave = int(np.random.normal(8 * 4, 2 * 4))
+        back = int(np.random.normal(17 * 4, 2 * 4))
+        daily = np.ones(96)
+        daily[leave:back]=0
+        self.daily = daily
 
-    def step(self, state: State, action: Action,
-             disturbance: Disturbance, timestep: float) -> Dict[str, Any]:
-        pass
+    def step(self, current_step: int) -> Optional[OccupancyData]:
+        step_of_day = current_step % 96
+        self.current_occ.occupancy_fraction = self.daily[step_of_day]
+        return self.current_occ
 
     def reset(self) -> None:
         pass
