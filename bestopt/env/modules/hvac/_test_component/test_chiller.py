@@ -1,5 +1,5 @@
-from ..component.chiller import ChillerModule
-from ....core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
+from bestopt.env.modules.hvac.component.chiller import ChillerModule
+from bestopt.env.core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
 
 # Configuration for chiller
 cfg = {

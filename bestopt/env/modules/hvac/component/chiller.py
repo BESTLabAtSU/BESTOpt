@@ -5,8 +5,8 @@ Chiller module (Carnot-based COP with CHW flow and return temp inputs).
 from typing import Dict, Any
 import numpy as np
 
-from ....core.base import BaseModule
-from ....core.data_structure import ThermalAction, ChillerState, PumpState, CoilState
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import ThermalAction, ChillerState, PumpState, CoilState
 
 
 class ChillerModule(BaseModule):
