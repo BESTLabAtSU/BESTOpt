@@ -109,7 +109,7 @@ class FCU(BaseModule):
         # === 2. Fan actuation ===
         self.fan.step(self.fan_state, fan_local_cmd, timestep)
 
-        # === 3. Pump control (placeholder): setpoint = fixed flow rate based on fan ===
+        # === 3. Pump control (local) ===
         pump_local_cmd: HVACLocalAction = self.pump_ctrl.step(action, timestep)
 
         # === 4. Pump step ===
@@ -118,7 +118,7 @@ class FCU(BaseModule):
         # === 5. Coil step (pure thermodynamics) ===
         self.coil_state.airflow_m3s = self.fan_state.airflow_m3s
         self.coil_state.waterflow_m3s = self.pump_state.waterflow_m3s
-        self.coil_state.air_inlet_temp_C = getattr(action, "zone_air_temp_C", 26.0)
+        self.coil_state.air_inlet_temp_C = getattr(action, "return_air_temperature", 26.0)
         self.coil_state.water_inlet_temp_C = self.chiller_state.chws_temp_c
 
         self.coil.step(self.coil_state, action, timestep)
@@ -145,9 +145,10 @@ class FCU(BaseModule):
         )
 
         return {
-            "Q_zone_actual_W": self.coil_state.Q_W,
+            "Q_zone_actual_W": -self.coil_state.Q_W,
             "SAT_actual_C": self.coil_state.air_outlet_temp_C,
             "SA_flow_actual_m3s": self.fan_state.airflow_m3s,
+            "CHW_flow_actual_m3s": self.pump_state.waterflow_m3s,
             "FCU_power_total_W": power_total_W,
             "FCU_energy_cumulative_J": energy_total_J
         }
