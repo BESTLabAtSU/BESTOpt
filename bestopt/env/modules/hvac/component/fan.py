@@ -51,7 +51,7 @@ class FanModule(BaseModule):
         state: "FanState",
         action: "HVACLocalAction",  
         timestep: float
-    ) -> Dict[str, Any]:
+    ) -> FanState:
         """
         One step (SI):
           - read airflow setpoint [m^3/s]

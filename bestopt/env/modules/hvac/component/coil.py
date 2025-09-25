@@ -64,7 +64,7 @@ class CoilModule(BaseModule):
         state: "CoilState",
         action: Any,                      # not used
         timestep: float
-    ) -> Dict[str, Any]:
+    ) -> CoilState:
         """Compute outlet temps from inlet temps and flows; write in-place to state."""
 
         # 0) Inputs (do NOT modify)
@@ -84,7 +84,7 @@ class CoilModule(BaseModule):
             state.air_outlet_temp_C = Ta_in
             state.water_outlet_temp_C = Tw_in
             self._record_state({"Ta_out": Ta_in, "Tw_out": Tw_in, "Q_W": 0.0})
-            return {}
+            return state
 
         # 2) Identify hot/cold side by inlet temps
         if Ta_in >= Tw_in:
