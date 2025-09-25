@@ -376,7 +376,8 @@ class Action:
 @dataclass
 class WeatherData:
     """Weather disturbances data."""
-    outdoor_temperature: float = 20.0  # °C
+    outdoor_dry_bulbtemperature: float = 30.0  # °C
+    outdoor_wet_bulb_temperature: float = 26.0  # °C
     solar_radiation: float = 0.0  # W/m²
     # @TODO add more in the future
 
@@ -705,8 +706,11 @@ class BoilerState(ComponentState):
 @dataclass
 class CoolingTowerState(ComponentState):
     heat_rejected_W: float = 0.0
-    outlet_temp_c: float = 0.0
+    cw_supply_temp_c: float = 0.0
+    cw_return_temp_c: float = 0.0
+    cw_flow_m3s: float = 0.0
     fan_power_W: float = 0.0
+    pump_power_W: float = 0.0
     energy_J_cum: float = 0.0
 
     def __post_init__(self):
