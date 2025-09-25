@@ -27,7 +27,7 @@ from bestopt.env.modules.hvac.component.pump import PumpModule
 from bestopt.env.core.data_structure import PumpState, ThermalAction, HVACLocalAction
 
 # single step
-cfg = {"rated_flow": 2.0, "rated_power_W": 4000.0, "enable_history": True}
+cfg = {"rated_flow": 82.0, "rated_power_W": 4000.0, "enable_history": True}
 pump = PumpModule(cfg, name="pump")
 pump.initialize()
 
@@ -37,9 +37,6 @@ fs0 = PumpState(component_id="pump", component_type="", domain="")  # __post_ini
 # one step
 fs = pump.step(state=fs0, action=op_act, timestep=900)
 
-print(fs.airflow_m3s)        
+print(fs.waterflow_m3s)        
 print(fs.power_W)         
 print(fs.energy_J_cum)   
-
-
-
