@@ -263,10 +263,10 @@ class ThermalDynamicsModule(BaseModule):
             self.current_timestep = timestep
 
             # Extract inputs from disturbance and action
-            outdoor_temp = disturbance.weather.outdoor_temperature
+            outdoor_temp = disturbance.weather.outdoor_dry_bulbtemperature
             solar_radiation = disturbance.weather.solar_radiation
             occupancy = disturbance.occupancy.occupancy_fraction
-            hvac_power = action.hvac_power
+            hvac_thermal_load = action.hvac_thermal_load
 
             current_zone_state = state
             current_temp = current_zone_state.temperature
@@ -279,7 +279,7 @@ class ThermalDynamicsModule(BaseModule):
                 'temp_room': current_temp,
                 'temp_amb': outdoor_temp,
                 'solar': solar_radiation,
-                'phvac': hvac_power,
+                'phvac': hvac_thermal_load,
                 'occ': occupancy,
                 'day_sin': day_sin,
                 'day_cos': day_cos
@@ -348,7 +348,7 @@ class ThermalDynamicsModule(BaseModule):
                 'buffer_size': len(self.history_buffer),
                 'latest_room_temp': latest_data.get('temp_room', 0),
                 'latest_ambient_temp': latest_data.get('temp_amb', 0),
-                'latest_hvac_power': latest_data.get('phvac', 0),
+                'latest_hvac_thermal_load': latest_data.get('phvac', 0),
                 'zone_id': self.zone_id,
                 'is_prepared': self.is_prepared
             }

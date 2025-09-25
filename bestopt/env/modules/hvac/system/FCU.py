@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from bestopt.env.core.base import BaseModule
 from bestopt.env.core.data_structure import (
-    ThermalAction, Disturbance,
+    ThermalAction, Disturbance,ThermalDomainState,
     HVACLocalAction,
     CoilState, FanState, PumpState, ChillerState, CoolingTowerState
 )
@@ -21,7 +21,7 @@ from bestopt.env.modules.hvac.local_controller.fan_local_controller import FanLo
 from bestopt.env.modules.hvac.local_controller.pump_local_controller import PumpLocalController
 
 
-class FCU(BaseModule):
+class FCUModule(BaseModule):
     """
     Fan Coil Unit (FCU) system that includes:
       - 1x Fan (airflow control)
@@ -95,6 +95,7 @@ class FCU(BaseModule):
 
     def step(
         self,
+        state: ThermalDomainState,
         action: ThermalAction,
         disturbance: Disturbance,
         timestep: float
@@ -110,7 +111,7 @@ class FCU(BaseModule):
         self.fan.step(self.fan_state, fan_local_cmd, timestep)
 
         # === 3. Pump control (local) ===
-        pump_local_cmd: HVACLocalAction = self.pump_ctrl.step(action, timestep)
+        pump_local_cmd: HVACLocalAction = self.pump_ctrl.step(state, action, timestep)
 
         # === 4. Pump step ===
         self.pump.step(self.pump_state, pump_local_cmd, timestep) #disturbance, 
@@ -144,11 +145,10 @@ class FCU(BaseModule):
             + self.tower_state.energy_J_cum
         )
 
-        return {
-            "Q_zone_actual_W": -self.coil_state.Q_W,
-            "SAT_actual_C": self.coil_state.air_outlet_temp_C,
-            "SA_flow_actual_m3s": self.fan_state.airflow_m3s,
-            "CHW_flow_actual_m3s": self.pump_state.waterflow_m3s,
-            "FCU_power_total_W": power_total_W,
-            "FCU_energy_cumulative_J": energy_total_J
-        }
+        self.Q_zone_actual_W = -self.coil_state.Q_W
+        self.SAT_actual_C = self.coil_state.air_outlet_temp_C
+        self.SA_flow_actual_m3s = self.fan_state.airflow_m3s
+        self.CHW_flow_actual_m3s = self.pump_state.waterflow_m3s
+        self.FCU_power_total_W = power_total_W
+        self.FCU_energy_cumulative_J = energy_total_J
+

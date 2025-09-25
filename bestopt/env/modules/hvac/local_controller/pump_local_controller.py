@@ -2,8 +2,8 @@ from typing import Dict, Any, Optional
 from math import inf
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, HVACLocalAction
-from bestopt.env.core.constants import WATER_DENSITY, WATER_SPECIFIC_HEAT
+from bestopt.env.core.data_structure import ThermalAction, HVACLocalAction, ThermalDomainState
+from bestopt.env.core.constants import WATER_DENSITY, WATER_SPECIFIC_HEAT, AIR_DENSITY, AIR_SPECIFIC_HEAT
 
 
 class PumpLocalController(BaseModule):
@@ -39,6 +39,7 @@ class PumpLocalController(BaseModule):
 
     def step(
         self,
+        state: ThermalDomainState,
         action: ThermalAction,
         timestep: float
     ) -> HVACLocalAction:
@@ -52,18 +53,18 @@ class PumpLocalController(BaseModule):
         Returns:
             HVACLocalAction: The computed pump flowrate command.
         """
-        thermal_load: Optional[float] = getattr(action, "thermal_load", None)
+        # this is why I am thinking we also need to pass an 'ID' like parameters later when extend to multizone building
+        return_air_temp = state.thermal_zones["zone0"].temperature
+        #@ TODO I use flowrate and temperature setpoint here to estimate thermal demand, is it OK?
+        thermal_load = AIR_DENSITY * action.supervisory_supply_air_flow_rate * AIR_SPECIFIC_HEAT * (action.supervisory_supply_air_temperature - return_air_temp)
 
-        if thermal_load is None:
-            pump_flowrate: Optional[float] = None
-        else:
-            # Calculate required flowrate
-            pump_flowrate = abs(thermal_load / (
-                self.delta_T * WATER_DENSITY * WATER_SPECIFIC_HEAT
-            ))
+        # Calculate required flowrate
+        pump_flowrate = abs(thermal_load / (
+            self.delta_T * WATER_DENSITY * WATER_SPECIFIC_HEAT
+        ))
 
-            # Enforce maximum limit
-            pump_flowrate = min(pump_flowrate, self.pump_flowrate_max)
+        # Enforce maximum limit
+        pump_flowrate = min(pump_flowrate, self.pump_flowrate_max)
 
         self.current_flowrate = pump_flowrate
 

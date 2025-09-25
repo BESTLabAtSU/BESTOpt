@@ -422,6 +422,9 @@ class BESTOptEnvironment:
 
         # Process each building
         for building_id in self.states.keys():
+            # Update disturbances
+            self._update_building_disturbances(building_id)
+
             # Get actions for this building from domain controllers
             building_action = self._get_building_actions(
                 building_id,
@@ -430,9 +433,6 @@ class BESTOptEnvironment:
 
             # Store the combined action
             self.actions[building_id] = building_action
-
-            # Update disturbances
-            self._update_building_disturbances(building_id)
 
             # Execute building modules with the actions
             self._execute_building_modules(building_id)
@@ -625,38 +625,39 @@ class BESTOptEnvironment:
         if "hvac_systems" in building_modules:
             for hvac_id, hvac_module in building_modules["hvac_systems"].items():
                 try:
-                    supervisory_action = action.thermal
+                    # There are two ways to control hvac systems
+                    # 1) call local controller here, to decompose the control signal to local level
+                    # 2) register hvac system that include local controller already, and only call step here only
+                    # For better code management, we transfer from the first way to the second.
+                    # supervisory_action = action.thermal
+                    # if hasattr(hvac_module, 'local_controller'):
+                    #     local_action = hvac_module.local_controller.step(
+                    #         supervisory_action=supervisory_action,
+                    #         state=state.thermal.hvac_systems[hvac_id],
+                    #         disturbance=disturbance,
+                    #         timestep=self.current_step
+                    #     )
+                    # else:
+                    #     local_action = supervisory_action
 
-                    if hasattr(hvac_module, 'local_controller'):
-                        # Use local controller to translate supervisory action to component action
-                        local_action = hvac_module.local_controller.step(
-                            supervisory_action=supervisory_action,
-                            state=state.thermal.hvac_systems[hvac_id],
-                            disturbance=disturbance,
-                            timestep=self.current_step
-                        )
-                    else:
-                        # No local controller, pass supervisory action directly
-                        local_action = supervisory_action
+                    # @TODO these are full thermal state and action, Do we need to pass kiind of "ID" as well later?
+                    # so the model can know which part of data to use
                     hvac_module.step(
-                        state=state.thermal.hvac_systems[hvac_id],
-                        action=local_action,
+                        state=state.thermal,
+                        action=action.thermal,
                         disturbance=disturbance,
                         timestep=self.current_step
                     )
                 except Exception as e:
                     self.logger.error(f"HVAC {hvac_id} step failed: {e}")
 
-
-
         if "thermal_zones" in building_modules:
             for zone_id, zone_module in building_modules["thermal_zones"].items():
                 try:
                     # wrap up thermal load
                     # @TODO need to match ID
-                    thermal_load = (13 - state.thermal.thermal_zones[zone_id].temperature)*hvac_module.current_flow_rate*1.2*1005
                     # @Need rename to thermal load in action data structure, check later
-                    action.thermal.hvac_power = thermal_load
+                    action.thermal.hvac_thermal_load = hvac_module.Q_zone_actual_W
                     zone_module.step(
                         state=state.thermal.thermal_zones[zone_id],
                         action=action.thermal,  # Pass thermal action
@@ -701,7 +702,7 @@ class BESTOptEnvironment:
         obs.day_of_year = int((self.current_step * self.res / 86400)) % 365 + 1
 
         # Add forecasts (these would come from disturbance modules)
-        obs.outdoor_temp_forecast = [disturbance.weather.outdoor_temperature] * 4
+        obs.outdoor_temp_forecast = [disturbance.weather.outdoor_dry_bulbtemperature] * 4
         obs.solar_forecast = [disturbance.weather.solar_radiation] * 4
         obs.price_forecast = [disturbance.prices.electricity_price] * 4
         obs.occupancy_forecast = [disturbance.occupancy.occupancy_fraction] * 4

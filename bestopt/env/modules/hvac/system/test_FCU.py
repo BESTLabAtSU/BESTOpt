@@ -1,5 +1,5 @@
 import numpy as np
-from bestopt.env.modules.hvac.package.FCU import FCU
+from bestopt.env.modules.hvac.system.FCU import FCUModule
 from bestopt.env.core.data_structure import ThermalAction, Disturbance, WeatherData, PumpState
 
 # === FCU System Config ===
@@ -19,7 +19,7 @@ fcu_config = {
 }
 
 # === Instantiate FCU system ===
-fcu = FCU(config=fcu_config)
+fcu = FCUModule(config=fcu_config)
 fcu.initialize()
 
 # === Setup inputs ===

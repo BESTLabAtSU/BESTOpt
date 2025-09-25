@@ -44,7 +44,7 @@ class WeatherModule(BaseModule):
             self.weather_data = None
 
         # Initialize current weather
-        self.current_weather = WeatherData(outdoor_temperature=0.0, solar_radiation=0.0)
+        self.current_weather = WeatherData(outdoor_dry_bulbtemperature=0.0, outdoor_wet_bulb_temperature = 0.0, solar_radiation=0.0)
         self.logger.info(f"Weather module initialized: {self.name}")
 
     def step(self, current_step: int) -> Optional[WeatherData]:
@@ -117,22 +117,26 @@ class WeatherModule(BaseModule):
         sim_data = self.weather_data[self.weather_data['Time'] >= sim_start]
         row = sim_data.iloc[current_step]
         ot = (float(row["outdoor_temperature"])-32)*5/9  # @TODO need to use standard unit, use hard coding for now
+        # @TODO need to seperate dry/wet bulb temperature later
+        # also need to update the data format process
         sr = float(row["solar_radiation"])
-        return WeatherData(outdoor_temperature=ot, solar_radiation=sr)
+        return WeatherData(outdoor_dry_bulbtemperature=ot, outdoor_wet_bulb_temperature = ot, solar_radiation=sr)
 
     def reset(self) -> None:
         self.current_timestep = 0
-        self.current_weather = WeatherData(outdoor_temperature=0.0, solar_radiation=0.0)
+        self.current_weather = WeatherData(outdoor_dry_bulbtemperature=0, outdoor_wet_bulb_temperature=0, solar_radiation=0)
         self.logger.debug(f"Reset weather module: {self.name}")
 
     def get_state(self) -> Dict[str, Any]:
         return {
             "current_timestep": self.current_timestep,
-            "outdoor_temperature": self.current_weather.outdoor_temperature,
+            "outdoor_dry_bulbtemperature": self.current_weather.outdoor_dry_bulbtemperature,
+            "outdoor_wet_bulb_temperature": self.current_weather.outdoor_wet_bulb_temperature,
             "solar_radiation": self.current_weather.solar_radiation,
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         self.current_timestep = int(state.get("current_timestep", 0))
-        self.current_weather.outdoor_temperature = float(state.get("outdoor_temperature", 0.0))
+        self.current_weather.outdoor_dry_bulbtemperature = float(state.get("outdoor_dry_bulbtemperature", 0.0))
+        self.current_weather.outdoor_wet_bulb_temperature = float(state.get("outdoor_wet_bulb_temperature", 0.0))
         self.current_weather.solar_radiation = float(state.get("solar_radiation", 0.0))

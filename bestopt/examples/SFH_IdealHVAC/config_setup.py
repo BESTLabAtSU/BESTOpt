@@ -37,12 +37,22 @@ cm.add_building_component(
 )
 
 cm.add_building_component(
-    "SFH_1", "hvac_systems", "fan",
+    "SFH_1", "hvac_systems", "fcu",
     parameters={
-        "fan_type": "staged",  # Can be: ideal, constant, staged, variable
-        "stage_air_flow_rate": {"stage1": 0.0, "stage2": 0.2, "stage3": 0.4, "stage4": 0.6, "stage5": 0.8},
-    },
-    class_path="bestopt.env.modules.hvac.fan.FanModule"
+    "fan": {"rated_flow_m3s": 8, "rated_power_W": 8*1000}, #fan_power_per_flow ≈ 1,000 – 1,500 W per m³/s
+    "fan_ctrl": {"ctrl_type": "linear"},
+    "coil": {"epsilon": 0.8},
+    "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 0.05*100_000}, # pump_power_per_flow = 100,000 W per m³/s
+    "chiller": {"rated_capacity_W": 100_000, "rated_cop": 5.5},
+    "tower": {
+        "rated_capacity_W": 120_000,
+        "rated_fan_power_W": 2000,
+        "pump_power_per_flow": 1800,
+        "min_approach_C": 3.0,
+        "max_approach_C": 7.0
+    }
+},
+    class_path="bestopt.env.modules.hvac.system.FCU.FCUModule"
 )
 
 cm.add_controller(
@@ -54,17 +64,6 @@ cm.add_controller(
     },
     class_path="bestopt.env.controllers.thermal.SupervisoryController"
 )
-
-cm.add_local_controller(
-    "SFH_1.hvac_systems.fan",  # Component path
-    # @TODO it should have same pare as parent's module
-    parameters={
-        "fan_type": "staged",  # Can be: ideal, constant, staged, variable
-        "stage_air_flow_rate": {"stage1": 0.0, "stage2": 0.2, "stage3": 0.4, "stage4": 0.6, "stage5": 0.8},
-    },
-    class_path="bestopt.env.controllers.hvac.fan.FanLocalController"
-)
-
 
 cm.add_disturbance(
     "weather",

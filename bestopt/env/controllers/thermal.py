@@ -23,8 +23,8 @@ class SupervisoryController(BaseModule):
 
         # Comfort settings
         # @TODO These settings should be more dynamic in the future
-        self.setpoint_cooling = config.get("setpoint_cooling", 24.0)  # °C
-        self.setpoint_heating = config.get("setpoint_heating", 18.0)  # °C
+        self.base_cooling = config.get("base_cooling", 24.0)  # °C
+        self.base_heating = config.get("base_heating", 18.0)  # °C
         self.deadband = config.get("deadband", 0.5)  # °C
 
         # HVAC capacity settings
@@ -34,12 +34,12 @@ class SupervisoryController(BaseModule):
         self.stage2_power = config.get("stage2_power", 4000.0)  # W (100% capacity)
 
         # Control states
-        self.current_hvac_power = 0.0
+        self.current_hvac_thermal_load = 0.0
         self.last_mode = HVACMode.OFF
 
     def initialize(self) -> None:
         """Initialize the controller."""
-        self.current_hvac_power = 0.0
+        self.current_hvac_thermal_load = 0.0
         self.current_supply_air_flow_rate = 0.0
         self.current_supply_air_temperature = 13
         self.last_mode = HVACMode.OFF
@@ -76,7 +76,6 @@ class SupervisoryController(BaseModule):
             # Get occupancy information
             occupancy = disturbance.occupancy.occupancy_fraction
 
-
             # Determine active setpoints based on occupancy
             cooling_setpoint, heating_setpoint = self._get_active_setpoints(
                 occupancy, disturbance
@@ -106,15 +105,15 @@ class SupervisoryController(BaseModule):
         except Exception as e:
             self.logger.error(f"Error in thermal controller step: {e}")
             # Return safe default action
-            return ThermalAction(hvac_power=0.0)
+            return ThermalAction(thermal_load=0.0)
 
     def _get_active_setpoints(self, occupancy, disturbance) -> tuple:
         """Determine active setpoints based on occupancy and schedule."""
-        base_cooling = self.setpoint_cooling
-        base_heating = self.setpoint_heating
+        base_cooling = self.base_cooling
+        base_heating = self.base_heating
 
         # Check if building is occupied
-        if occupancy>0:
+        if occupancy>0.0:
             # occupied
             cooling_setpoint = base_cooling
             heating_setpoint = base_heating
@@ -182,7 +181,7 @@ class SupervisoryController(BaseModule):
             return 0.0
         else:
             # Maintain current state
-            return self.current_hvac_power
+            return self.current_hvac_thermal_load
 
     def _auto_control(self, cooling_error: float, heating_error: float,
                      can_change_state: bool) -> float:
@@ -207,20 +206,20 @@ class SupervisoryController(BaseModule):
 
         # Maintain current state
         else:
-            return self.current_hvac_power
+            return self.current_hvac_thermal_load
 
-    def _determine_hvac_mode(self, power: float) -> str:
-        """Determine HVAC operating mode from power level."""
-        if power < 0:
+    def _determine_hvac_mode(self, thermal_load: float) -> str:
+        """Determine HVAC operating mode from thermal_load level."""
+        if thermal_load < 0:
             return "cooling"
-        elif power > 0:
+        elif thermal_load > 0:
             return "heating"
         else:
             return "off"
 
     def reset(self) -> None:
         """Reset controller to initial state."""
-        self.current_hvac_power = 0.0
+        self.current_hvac_thermal_load = 0.0
         self.last_mode = HVACMode.OFF
         self.hvac_is_on = False
         self.last_state_change_time = 0
@@ -230,7 +229,7 @@ class SupervisoryController(BaseModule):
     def get_state(self) -> Dict[str, Any]:
         """Get current controller state."""
         return {
-            'current_hvac_power': self.current_hvac_power,
+            'current_hvac_thermal_load': self.current_hvac_thermal_load,
             'hvac_is_on': self.hvac_is_on,
             'last_state_change_time': self.last_state_change_time,
             'mode': self.mode.value
@@ -238,7 +237,7 @@ class SupervisoryController(BaseModule):
 
     def set_state(self, state: Dict[str, Any]) -> None:
         """Set controller state."""
-        self.current_hvac_power = state.get('current_hvac_power', 0.0)
+        self.current_hvac_thermal_load = state.get('current_hvac_thermal_load', 0.0)
         self.hvac_is_on = state.get('hvac_is_on', False)
         self.last_state_change_time = state.get('last_state_change_time', 0)
         if 'mode' in state:
