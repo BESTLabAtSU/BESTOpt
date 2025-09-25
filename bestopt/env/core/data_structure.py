@@ -317,6 +317,7 @@ class ThermalAction:
     """Thermal control actions."""
 
     hvac_power: float = 0.0
+    thermal_load: float = 0.0
     supervisory_supply_air_flow_rate: float = 0.0
     supervisory_supply_air_temperature: float = 0.0
     hvac_mode: HVACMode = HVACMode.OFF

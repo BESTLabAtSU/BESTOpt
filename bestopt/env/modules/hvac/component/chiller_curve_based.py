@@ -39,6 +39,44 @@ class ChillerCurveBased(BaseModule):
         - energy_J_cum                        : Cumulative energy use [J]
         - chws_temp_c                         : CHW supply temperature [°C]
         - chw_flow_m3s                        : Chilled water flow rate [m³/s]
+        
+    Model:
+      - Follows EnergyPlus electric chiller model using 3 empirical modifier curves:
+          1. Capacity modifier curve (function of evap temp and cond temp)
+          2. EIR modifier curve (function of evap temp and cond temp)
+          3. EIR modifier curve (function of part-load ratio, PLR)
+      - Actual cooling output:
+          Q = RatedCapacity × CapMod × PLR
+      - Power consumption:
+          Power = (Q / RatedCOP) × EIRModTemp × EIRModPLR
+      - COP is computed as: COP = Q / Power
+      - PLR is clipped between min_plr and max_plr
+      - CHW supply temperature is assumed to match setpoint (no outlet curve model)
+
+    State:
+      - Reads from:
+          * CoilState.water_outlet_temp_C
+          * PumpState.waterflow_m3s
+          * ThermalAction.chws_temp_c_sp
+          * ThermalAction.condenser_temp_c_sp
+      - Writes IN-PLACE to ChillerState:
+          * ChillerState.cooling_W
+          * ChillerState.cop
+          * ChillerState.chws_temp_c
+          * ChillerState.chw_flow_m3s
+          * ChillerState.power_W
+          * ChillerState.energy_J_cum
+
+    Action:
+      - Requires ThermalAction instances containing:
+          * chws_temp_c_sp
+          * condenser_temp_c_sp
+      - Typically triggered within an HVAC system manager or building MPC loop
+
+    Notes:
+      - All temperatures in °C; internal calculations convert to Kelvin only if needed
+      - Modifier curves are passed as Python functions or use built-in defaults
+      - No explicit control logic—cooling load is driven by delta-T and flow
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "chiller_curve"):
