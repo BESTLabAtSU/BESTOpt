@@ -722,3 +722,7 @@ class IceTankState(ComponentState):
     def __post_init__(self):
         self.domain = "thermal"
         self.component_type = "ice_tank"
+
+@dataclass
+class HVACLocalAction(ThermalAction):
+    fan_supply_air_flow_rate: float = 0.0

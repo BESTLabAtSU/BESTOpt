@@ -10,7 +10,7 @@ class FanModule(BaseModule):
     """
     Supply fan module that CONSUMES an airflow setpoint and UPDATES a FanState in place.
 
-    Input (from action): ThermalAction.supplyfan_flow_sp  [m^3/s]
+    Input (from action): HVACLocalAction.fan_supply_air_flow_rate [m^3/s]
 
     Output (written in-place to FanState):
     - state.flow_m3s
