@@ -20,7 +20,6 @@ class FanLocalController(BaseModule):
     def __init__(self, config: Dict[str, Any], name: str = "FanLocalController"):
         super().__init__(config, name)
         self.gain: float = float(config.get("gain", 1.0))
-        self.input_attr: Optional[str] = config.get("input_attr", None)
 
 
     def initialize(self) -> None:
@@ -36,6 +35,7 @@ class FanLocalController(BaseModule):
         """Compute local fan command and return a local-controller action."""
         
         upstream_flow = action.supervisory_supply_air_flow_rate
+        
         if upstream_flow is None:
             cmd = None
         else:
