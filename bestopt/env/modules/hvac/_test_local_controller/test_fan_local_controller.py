@@ -12,7 +12,6 @@ ip_act = ThermalAction(supervisory_supply_air_flow_rate=1.0)
 
 op_act = fan_local_controller.step(action=ip_act, timestep=900)
 
-
 print(op_act.fan_supply_air_flow_rate)   
 
 

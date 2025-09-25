@@ -63,10 +63,10 @@ class CoilModule(BaseModule):
         self,
         state: "CoilState",
         action: Any,                      # not used
-        disturbance: "Disturbance",
         timestep: float
     ) -> Dict[str, Any]:
-        """Compute outlet temps from inlet temps and flows; write in-place to state. (pure SI)"""
+        """Compute outlet temps from inlet temps and flows; write in-place to state."""
+
         # 0) Inputs (do NOT modify)
         Va = float(getattr(state, "airflow_m3s", 0.0))          # [m^3/s]
         Vw = float(getattr(state, "waterflow_m3s", 0.0))        # [m^3/s]
@@ -122,7 +122,7 @@ class CoilModule(BaseModule):
             "Ta_out": state.air_outlet_temp_C, "Tw_out": state.water_outlet_temp_C,
             "Q_W": Q_W, "eps": eps
         })
-        return {}
+        return state
 
 
     def reset(self) -> None:

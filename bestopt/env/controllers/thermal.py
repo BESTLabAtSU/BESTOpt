@@ -104,6 +104,8 @@ class SupervisoryController(BaseModule):
             thermal_action.supervisory_supply_air_flow_rate = supply_air_flow_rate
             thermal_action.supervisory_supply_air_temperature = supply_air_temperature
             thermal_action.thermal_load = thermal_load
+            thermal_action.return_air_temperature = current_temp
+            
             #@ TODO update the following function
             thermal_action.hvac_mode = self._determine_hvac_mode(thermal_load)
 

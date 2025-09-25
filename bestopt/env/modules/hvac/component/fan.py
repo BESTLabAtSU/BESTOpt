@@ -78,7 +78,7 @@ class FanModule(BaseModule):
         # 3) step energy [J]; timestep in seconds
         energy_J = power_W * (timestep if (timestep and timestep > 0.0) else 0.0)
 
-        # 4) in-place update (pure SI)
+        # 4) in-place update 
         prev = getattr(state, "energy_J_cum", 0.0) or 0.0
         state.airflow_m3s   = flow
         state.power_W       = power_W
