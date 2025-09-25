@@ -315,10 +315,27 @@ class State:
 @dataclass
 class ThermalAction:
     """Thermal control actions."""
+
     hvac_power: float = 0.0
+    thermal_load: float = 0.0
+    return_air_temperature: float = 0.0
     supervisory_supply_air_flow_rate: float = 0.0
     supervisory_supply_air_temperature: float = 0.0
     hvac_mode: HVACMode = HVACMode.OFF
+
+    pump_flow_sp: Optional[float] = None                # m³/s water flow for circulation    
+    supplyfan_flow_sp: Optional[float] = None           # m³/s air flow for supply fan
+    
+    chiller_cooling_W_sp: Optional[float] = 0.0         # Cooling demand [W]
+    chws_temp_c_sp: Optional[float] = 0.0               # Chilled water supply temp setpoint [°C]
+    condenser_temp_c_sp: Optional[float] = 35.0         # Condenser water temp setpoint [°C]
+    
+    cooling_tower_load_W_sp: Optional[float] = 0.0      # Cooling tower load [W]
+    wet_bulb_temp_c: Optional[float] = 25.0             # Wet bulb temperature for cooling tower [°C]
+    
+    ice_tank_mode: Optional[str] = "idle"               # ["charge", "discharge", "idle"]
+    ice_tank_power_W_sp: Optional[float] = 0.0          # Power setpoint in W
+    
     # @TODO HVAC controls
     # @TODO Thermal storage control
 
@@ -361,7 +378,8 @@ class Action:
 @dataclass
 class WeatherData:
     """Weather disturbances data."""
-    outdoor_temperature: float = 20.0  # °C
+    outdoor_dry_bulbtemperature: float = 30.0  # °C
+    outdoor_wet_bulb_temperature: float = 26.0  # °C
     solar_radiation: float = 0.0  # W/m²
     # @TODO add more in the future
 
@@ -588,3 +606,130 @@ class HierarchicalAction:
     component_actions: Dict[str, ComponentAction] = field(default_factory=dict)
     references: List[ControlReference] = field(default_factory=list)
     execution_order: List[str] = field(default_factory=list)
+
+
+@dataclass
+class PumpState(ComponentState):
+    """Standalone; not aggregated into ThermalDomainState for now."""
+    waterflow_m3s: float = 0.0
+    power_W: float = 0.0
+    energy_J_cum: float = 0.0  # accumulated electrical energy [kWh]
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with your taxonomy
+        self.domain = "thermal"
+        self.component_type = "pump"
+
+
+@dataclass
+class FanState(ComponentState):
+    """Standalone; not aggregated into ThermalDomainState for now."""
+    airflow_m3s: float = 0.0
+    power_W: float = 0.0
+    energy_J_cum: float = 0.0  # accumulated electrical energy [kWh]
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with your taxonomy
+        self.domain = "thermal"
+        self.component_type = "fan"
+
+
+@dataclass
+class CoilState(ComponentState):
+    """Standalone; not aggregated into ThermalDomainState for now."""
+    airflow_m3s: float = 0.0
+    waterflow_m3s: float = 0.0
+    air_inlet_temp_C: float = 0.0
+    air_outlet_temp_C: float = 0.0
+    water_inlet_temp_C: float = 0.0
+    water_outlet_temp_C: float = 0.0
+    Q_W: float = 0.0
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with your taxonomy
+        self.domain = "thermal"
+        self.component_type = "coil"
+
+
+@dataclass
+class HeatPumpState(ComponentState):
+    """Standalone Heat Pump state."""
+
+    source_inlet_temp_C: float = 0.0
+    sink_inlet_temp_C: float = 0.0
+    source_flow_m3s: float = 0.0
+    sink_flow_m3s: float = 0.0
+    sink_outlet_temp_set_C: float = 0.0
+
+    source_outlet_temp_C: float = 0.0
+    sink_outlet_temp_C: float = 0.0
+    thermal_power_W: float = 0.0
+    elec_power_W: float = 0.0
+    energy_J_cum: float = 0.0
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with taxonomy
+        self.domain = "thermal"
+        self.component_type = "heatpump"
+
+@dataclass
+class ChillerState(ComponentState):
+    cooling_W: float = 0.0               # Chiller cooling output [W]
+    cop: float = 0.0                     # Coefficient of Performance
+    chws_temp_c: float = 7.0             # Chilled Water Supply Temp [°C]
+    chw_flow_m3s: float = 0.0            # Chilled Water Flow Rate [m³/s]
+    power_W: float = 0.0                 # Electric power [W]
+    energy_J_cum: float = 0.0            # Accumulated energy [J]
+    def __post_init__(self):
+        # identify this component
+        self.domain = "thermal"
+        self.component_type = "chiller"
+
+@dataclass
+class BoilerState(ComponentState):
+    """Standalone Boiler state."""
+
+    # Inputs
+    inlet_temp_C: float = 0.0
+    flow_m3s: float = 0.0
+    outlet_temp_set_C: float = 0.0
+
+    # Outputs
+    outlet_temp_C: float = 0.0
+    thermal_power_W: float = 0.0
+    fuel_power_W: float = 0.0
+    energy_J_cum: float = 0.0   # cumulative fuel energy
+
+    def __post_init__(self):
+        # identify this component; keep it consistent with taxonomy
+        self.domain = "thermal"
+        self.component_type = "boiler"
+        
+@dataclass
+class CoolingTowerState(ComponentState):
+    heat_rejected_W: float = 0.0
+    cw_supply_temp_c: float = 0.0
+    cw_return_temp_c: float = 0.0
+    cw_flow_m3s: float = 0.0
+    fan_power_W: float = 0.0
+    pump_power_W: float = 0.0
+    energy_J_cum: float = 0.0
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "cooling_tower"
+        
+@dataclass
+class IceTankState(ComponentState):
+    soc: float = 0.0             # State of charge (0.0 - 1.0)
+    q_actual_W: float = 0.0      # Actual charge (+) or discharge (-) power in Watts
+    energy_J_cum: float = 0.0    # Cumulative energy transferred in Joules
+
+    def __post_init__(self):
+        self.domain = "thermal"
+        self.component_type = "ice_tank"
+
+@dataclass
+class HVACLocalAction(ThermalAction):
+    fan_supply_air_flow_rate: float = 0.0
+    pump_flowrate: float = 0.0

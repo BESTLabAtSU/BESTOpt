@@ -1,0 +1,93 @@
+{
+  "buildings": {
+    "SFH_1": {
+      "thermal_zones": {
+        "zone0": {
+          "parameters": {
+            "model_args": {
+              "para": {
+                "Int_h": 8,
+                "Ext_h": 14,
+                "epochs": 20
+              },
+              "modeltype": "PI-modnn",
+              "startday": 1,
+              "trainday": 180,
+              "testday": 1,
+              "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv",
+              "temp_unit": "C"
+            },
+            "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/Eplus/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+            "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/Eplus/ModNN_scaler.pkl",
+            "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv",
+            "encoder_length": 48,
+            "retrain": "Off"
+          },
+          "class_path": "bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+        }
+      },
+      "hvac_systems": {
+        "fan": {
+          "parameters": {
+            "fan_type": "staged",
+            "stage_air_flow_rate": {
+              "stage1": 0.2,
+              "stage2": 0.4,
+              "stage3": 0.6,
+              "stage4": 0.8
+            }
+          },
+          "class_path": "bestopt.env.modules.hvac.fan.FanModule"
+        }
+      }
+    }
+  },
+  "controllers": {
+    "SFH_1_thermal_SFH_1_THERMAL_Supervisory": {
+      "parameters": {
+        "domain": "thermal",
+        "type": "rule-based",
+        "mode": "cooling"
+      },
+      "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    }
+  },
+  "active_controllers": {
+    "SFH_1": {
+      "thermal": "SFH_1_thermal_SFH_1_THERMAL_Supervisory"
+    }
+  },
+  "local_controllers": {
+    "SFH_1.hvac_systems.fan": {
+      "parameters": {
+        "fan_type": "staged",
+        "stage_air_flow_rate": {
+          "stage1": 0.2,
+          "stage2": 0.4,
+          "stage3": 0.6,
+          "stage4": 0.8
+        }
+      },
+      "class_path": "bestopt.env.controllers.hvac.fan.FanLocalController"
+    }
+  },
+  "disturbances": {
+    "weather": {
+      "parameters": {
+        "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/weather/weather.csv"
+      },
+      "class_path": "bestopt.env.disturbances.weather.WeatherModule"
+    }
+  },
+  "environment": {
+    "parameters": {
+      "resolution": 900,
+      "duration": 86400,
+      "enable_history": true,
+      "logging_level": "INFO",
+      "simulation_start_time": "2023-08-01 00:00:00"
+    },
+    "class_path": "bestopt.environment.BestOptEnvironment"
+  },
+  "grid": {}
+}

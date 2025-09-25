@@ -1,9 +1,12 @@
 # Simplified water–air coil (heating/cooling) with effectiveness method.
 # Writes outlet temperatures IN-PLACE to CoilState. No action is required.
 
-from typing import Dict, Any
+import numpy as np
+from typing import Dict, Any, Optional
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import CoilState, Disturbance  # action is unused here
+from bestopt.env.core.data_structure import CoilState, Disturbance, Disturbance
+
+
 
 class CoilModule(BaseModule):
     """
@@ -63,10 +66,10 @@ class CoilModule(BaseModule):
         self,
         state: "CoilState",
         action: Any,                      # not used
+        disturbance: "Disturbance",
         timestep: float
-    ) -> CoilState:
-        """Compute outlet temps from inlet temps and flows; write in-place to state."""
-
+    ) -> Dict[str, Any]:
+        """Compute outlet temps from inlet temps and flows; write in-place to state. (pure SI)"""
         # 0) Inputs (do NOT modify)
         Va = float(getattr(state, "airflow_m3s", 0.0))          # [m^3/s]
         Vw = float(getattr(state, "waterflow_m3s", 0.0))        # [m^3/s]
@@ -84,7 +87,7 @@ class CoilModule(BaseModule):
             state.air_outlet_temp_C = Ta_in
             state.water_outlet_temp_C = Tw_in
             self._record_state({"Ta_out": Ta_in, "Tw_out": Tw_in, "Q_W": 0.0})
-            return state
+            return {}
 
         # 2) Identify hot/cold side by inlet temps
         if Ta_in >= Tw_in:
@@ -122,7 +125,7 @@ class CoilModule(BaseModule):
             "Ta_out": state.air_outlet_temp_C, "Tw_out": state.water_outlet_temp_C,
             "Q_W": Q_W, "eps": eps
         })
-        return state
+        return {}
 
 
     def reset(self) -> None:
