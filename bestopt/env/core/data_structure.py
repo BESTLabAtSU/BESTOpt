@@ -732,3 +732,4 @@ class IceTankState(ComponentState):
 @dataclass
 class HVACLocalAction(ThermalAction):
     fan_supply_air_flow_rate: float = 0.0
+    pump_flowrate: float = 0.0

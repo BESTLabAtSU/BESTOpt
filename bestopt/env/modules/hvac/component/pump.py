@@ -1,100 +1,108 @@
-"""
-Pump module.
-"""
-
 from typing import Dict, Any
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, PumpState, Action, Disturbance  
+from bestopt.env.core.data_structure import PumpState, HVACLocalAction
+
 
 class PumpModule(BaseModule):
     """
-    Pump module that CONSUMES an waterflow setpoint and UPDATES a WaterState in place.
+    Pump module that consumes a pump water flow setpoint and updates a PumpState in place.
 
-    Input (from action): ThermalAction.pump_flow_sp  [m^3/s]
+    Input (action):
+        - HVACLocalAction.pump_flowrate [m^3/s]
 
-    Output (written in-place to FanState):
-    - state.flow_m3s
-    - state.power_W
-    - state.energy_J_cum  (accumulated over steps)
+    Output (written in-place to PumpState):
+        - state.waterflow_m3s : actual water flow [m^3/s]
+        - state.power_W       : electric power [W]
+        - state.energy_J_cum  : accumulated energy [J]
 
-    Model
-    - Fan affinity law:  P = P_rated * (Q / Q_rated)^exponent
-    - Config keys:
-        * rated_flow_m3s  (or rated_flow)  Q_rated [m^3/s]
-        * rated_power_W                   P at Q_rated [W]
-        * power_exponent (default 3.0)     cube-law exponent
+    Model:
+        Variable speed drive pump.
+        power_W = rated_power_W * (0.00153 + 0.0052*PLR + 1.1086*PLR^2 - 0.1164*PLR^3)
 
-    State
-    - Expects a FanState instance passed as `state`.
-        * state.waterflow_m3s     : echoed waterflow [m^3/s]
-        * state.power_W        : electric power via affinity law [W]
-        * state.energy_J_cum  : accumulated energy over steps [W]
-
-    Action
-        No action.
-
+    Config:
+        - rated_flow_m3s (float, default 1.0): Rated flow [m^3/s]
+        - rated_power_W  (float, default 1000.0): Power at rated flow [W]
     """
 
-    def __init__(self, config: Dict[str, Any], name: str = "pump"):
+    def __init__(self, config: Dict[str, Any], name: str = "supply_pump"):
         super().__init__(config, name)
         q_rated = config.get("rated_flow_m3s", config.get("rated_flow", 1.0))
-        self.rated_flow_m3s: float = float(q_rated)                 
-        self.rated_power_W:  float = float(config.get("rated_power_W", 1000.0)) 
-        self.power_exponent: float = float(config.get("power_exponent", 3.0))    
+        self.rated_flow_m3s: float = float(q_rated)
+        self.rated_power_W: float = float(config.get("rated_power_W", 1000.0))
 
         if self.rated_flow_m3s <= 0.0:
             self.logger.warning(f"{self.name}: rated_flow_m3s <= 0, power will be forced to 0.")
 
+        # Internal state variables
+        self.current_flow: float = 0.0
+        self.current_power: float = 0.0
+        self.energy_J_cum: float = 0.0
+
+    # ------------------- lifecycle methods -------------------
+
     def initialize(self) -> None:
+        """Prepare module before simulation starts."""
+        self.current_flow = 0.0
+        self.current_power = 0.0
+        self.energy_J_cum = 0.0
         self._initialized = True
 
     def step(
         self,
-        state: "PumpState",
-        action: Any, 
-        disturbance: "Disturbance",
+        state: PumpState,
+        action: HVACLocalAction,
         timestep: float
     ) -> Dict[str, Any]:
         """
-        One step (SI):
-        - read waterflow setpoint [m^3/s]
-        - compute power [W] via affinity law
-        - accumulate step energy [J] = W * s
-        - write results IN-PLACE into Pump
+        One step (SI units):
+          - Read water flow setpoint [m^3/s]
+          - Compute power [W] via affinity law
+          - Accumulate energy [J] = W * timestep
+          - Write results in-place into PumpState
         """
-        
-        # 1) waterflow setpoint [m^3/s]
-        sp = getattr(action, "pump_flow_sp", None)
-        if sp is None and hasattr(action, "thermal"):
-            sp = getattr(action.thermal, "pump_flow_sp", None)
-
+        # 1) waterflow setpoint
+        sp = action.pump_flowrate
         flow = 0.0 if sp is None else float(sp)
         if flow < 0.0:
             self.logger.warning(f"{self.name}: negative flow received; clamped to 0.0")
             flow = 0.0
 
-        # 2) power via affinity law [W]
-        if self.rated_flow_m3s > 0.0 and self.rated_power_W >= 0.0:
-            ratio = flow / self.rated_flow_m3s
-            power_W = self.rated_power_W * (ratio ** self.power_exponent)
+        # 2) power computation
+        if self.rated_flow_m3s > 0.0 and self.rated_power_W > 0.0:
+            PLR = flow / self.rated_flow_m3s
+            power_W = self.rated_power_W * (
+                0.00153 + 0.0052 * PLR + 1.1086 * PLR**2 - 0.1164 * PLR**3
+            )
+            power_W = max(power_W, 0.0)   # clamp to zero
         else:
             power_W = 0.0
 
-        # 3) step energy [J]; timestep in seconds
-        energy_J = power_W * (timestep if (timestep and timestep > 0.0) else 0.0)
+        # 3) step energy [J]
+        energy_J = power_W * (timestep if timestep and timestep > 0.0 else 0.0)
 
-        # 4) in-place update (pure SI)
-        state.waterflow_m3s = flow
-        state.power_W = power_W
-        state.energy_J_cum = getattr(state, "energy_J_cum", 0.0) + energy_J
+        # 4) update internal state
+        self.current_flow = flow
+        self.current_power = power_W
+        self.energy_J_cum += energy_J
 
-        # 5) optional history
-        self._record_state({"waterflow_m3s": flow, "power_W": power_W, "energy_J": energy_J})
-        
-        return {}
+        # 5) write to external state
+        state.waterflow_m3s = self.current_flow
+        state.power_W = self.current_power
+        state.energy_J_cum = self.energy_J_cum
 
+        # record history
+        self._record_state({
+            "waterflow_m3s": flow,
+            "power_W": power_W,
+            "energy_J": energy_J
+        })
+
+        return state
 
     def reset(self) -> None:
-        self._state_history.clear()
-        self._initialized = False
-        self.initialize()
+        """Return to initial conditions for new episode."""
+        self.clear_history()
+        self.current_flow = 0.0
+        self.current_power = 0.0
+        self.energy_J_cum = 0.0
+        self._initialized = True
