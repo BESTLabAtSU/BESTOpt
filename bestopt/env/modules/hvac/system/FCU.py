@@ -152,3 +152,12 @@ class FCUModule(BaseModule):
         self.FCU_power_total_W = power_total_W
         self.FCU_energy_cumulative_J = energy_total_J
 
+        return {
+            "Q_zone_actual_W": -self.coil_state.Q_W,
+            "SAT_actual_C": self.coil_state.air_outlet_temp_C,
+            "SA_flow_actual_m3s": self.fan_state.airflow_m3s,
+            "CHW_flow_actual_m3s": self.pump_state.waterflow_m3s,
+            "FCU_power_total_W": power_total_W,
+            "FCU_energy_cumulative_J": energy_total_J
+        }
+
