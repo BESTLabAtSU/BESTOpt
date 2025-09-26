@@ -1,7 +1,13 @@
 import numpy as np
 from bestopt.env.modules.hvac.system.FCU import FCUModule
-from bestopt.env.core.data_structure import ThermalAction, Disturbance, WeatherData, PumpState
 
+from bestopt.env.core.data_structure import (
+    State, Action, Disturbance, Observation,
+    BatteryState, PVState, BLDGEState, EVState,
+    HVACState, BLDGTState, TESState,
+    WaterHeaterState,WeatherData,
+    ThermalAction, ElectricalAction, WaterAction, ThermalDomainState
+)
 # === FCU System Config ===
 fcu_config = {
     "fan": {"rated_flow_m3s": 8, "rated_power_W": 8*1000}, #fan_power_per_flow ≈ 1,000 – 1,500 W per m³/s
@@ -30,12 +36,18 @@ n_steps = 24
 weather = WeatherData()
 weather.outdoor_wet_bulb_temperature = 24.0
 disturbance = Disturbance(weather=weather)
-
+state = State(building_id='SFH_1')
 # === Simulate 24 steps ===
 print("=== FCU 24-step Simulation ===")
 for t in range(n_steps):
     action = ThermalAction()
-    
+
+    state.thermal = ThermalDomainState(hvac_systems={
+        'fcu': HVACState(component_id='fcu', component_type='hvac', domain='thermal', timestamp=0.0, is_active=True,
+                         thermal_load=0.0)}, thermal_zones={
+        'zone0': BLDGTState(component_id='zone0', component_type='bldg_t', domain='thermal', timestamp=0.0,
+                            is_active=True, temperature=22.47007248919996, humidity=50.0, internal_heat_gain=0.0)},
+                       thermal_storage={}, total_heating_load=0.0, total_cooling_load=0.0)
     # === Fake Supervisory Controller Outputs ===
     action.thermal_load = -8_0000 + 2000 * (t % 6)  # Cooling demand (negative)
     action.supervisory_supply_air_temperature = 13.0       # SAT setpoint

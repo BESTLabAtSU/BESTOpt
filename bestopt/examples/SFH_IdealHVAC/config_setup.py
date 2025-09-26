@@ -4,7 +4,6 @@ Configuration file for a single family house
 
 import logging
 from bestopt.env.core.config_manager import ConfigurationManager
-from bestopt.env.core.data_structure import BatteryConfig
 
 logging.basicConfig(
     level=logging.INFO,
