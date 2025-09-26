@@ -30,8 +30,8 @@
         "fcu": {
           "parameters": {
             "fan": {
-              "rated_flow_m3s": 8,
-              "rated_power_W": 8000
+              "rated_flow_m3s": 1,
+              "rated_power_W": 1000
             },
             "fan_ctrl": {
               "ctrl_type": "linear"
@@ -40,15 +40,15 @@
               "epsilon": 0.8
             },
             "pump": {
-              "rated_flow_m3s": 0.01,
-              "rated_power_W": 5000.0
+              "rated_flow_m3s": 0.005,
+              "rated_power_W": 500.0
             },
             "chiller": {
-              "rated_capacity_W": 100000,
+              "rated_capacity_W": 5000,
               "rated_cop": 5.5
             },
             "tower": {
-              "rated_capacity_W": 120000,
+              "rated_capacity_W": 6000,
               "rated_fan_power_W": 2000,
               "pump_power_per_flow": 1800,
               "min_approach_C": 3.0,

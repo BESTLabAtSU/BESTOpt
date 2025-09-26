@@ -44,7 +44,7 @@ for t in range(n_steps):
     action.condenser_temp_c_sp = 30.0        # CW setpoint
     action.return_air_temperature = 25.0 + 1 * (t % 6)           # Simulated zone return air
 
-    result = fcu.step(action=action, disturbance=disturbance, timestep=timestep_sec)
+    result = fcu.step(state.thermal, action=action, disturbance=disturbance, timestep=timestep_sec)
 
     print(
         f"Step {t:02d} | "

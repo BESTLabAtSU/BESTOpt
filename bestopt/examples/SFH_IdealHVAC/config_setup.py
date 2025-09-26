@@ -39,13 +39,13 @@ cm.add_building_component(
 cm.add_building_component(
     "SFH_1", "hvac_systems", "fcu",
     parameters={
-    "fan": {"rated_flow_m3s": 8, "rated_power_W": 8*1000}, #fan_power_per_flow ≈ 1,000 – 1,500 W per m³/s
+    "fan": {"rated_flow_m3s": 1, "rated_power_W": 1*1000}, #fan_power_per_flow ≈ 1,000 – 1,500 W per m³/s
     "fan_ctrl": {"ctrl_type": "linear"},
     "coil": {"epsilon": 0.8},
-    "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 0.05*100_000}, # pump_power_per_flow = 100,000 W per m³/s
-    "chiller": {"rated_capacity_W": 100_000, "rated_cop": 5.5},
+    "pump": {"rated_flow_m3s": 0.005, "rated_power_W": 0.005*100_000}, # pump_power_per_flow = 100,000 W per m³/s
+    "chiller": {"rated_capacity_W": 5_000, "rated_cop": 5.5},
     "tower": {
-        "rated_capacity_W": 120_000,
+        "rated_capacity_W": 6_000,
         "rated_fan_power_W": 2000,
         "pump_power_per_flow": 1800,
         "min_approach_C": 3.0,
@@ -54,6 +54,7 @@ cm.add_building_component(
 },
     class_path="bestopt.env.modules.hvac.system.FCU.FCUModule"
 )
+
 
 cm.add_controller(
     "SFH_1_THERMAL_Supervisory",
@@ -64,6 +65,15 @@ cm.add_controller(
     },
     class_path="bestopt.env.controllers.thermal.SupervisoryController"
 )
+
+# cm.add_controller(
+#     "SFH_1_Electric_Supervisory",
+#     parameters={
+#         "domain": "electrical",
+#         "type": "rule-based",
+#     },
+#     class_path="bestopt.env.controllers.electrical.SupervisoryController"
+# )
 
 cm.add_disturbance(
     "weather",

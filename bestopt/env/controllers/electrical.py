@@ -10,7 +10,7 @@ from ..core.base import BaseModule
 from ..core.data_structure import State, Action, Disturbance
 
 
-class RuleBased(BaseModule):
+class SupervisoryController(BaseModule):
     """
     RuleBased Controller.
 
@@ -30,7 +30,7 @@ class RuleBased(BaseModule):
             name: Module name
         """
         super().__init__(config, name)
-        pass
+        self.domain = config.get("domain", "electrical")
 
     def initialize(self) -> None:
         pass
