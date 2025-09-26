@@ -318,7 +318,7 @@ class ThermalAction:
     hvac_thermal_load: float = 0.0
     supervisory_cooling_setpoint: float = 0.0
     supervisory_heating_setpoint: float = 0.0
-    return_air_temperature: float = 0.0
+    # return_air_temperature: float = 0.0
     supervisory_supply_air_flow_rate: float = 0.0
     supervisory_supply_air_temperature: float = 0.0
     hvac_mode: HVACMode = HVACMode.OFF
