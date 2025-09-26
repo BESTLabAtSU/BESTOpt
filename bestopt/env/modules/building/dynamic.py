@@ -13,7 +13,7 @@ from modnn.Config import _args  # Using version 3.0.7
 from modnn.utils import Mod
 from ...core.base import BaseModule
 from ...core.data_structure import State, Action, Disturbance, BLDGTState
-
+import os
 
 class ThermalDynamicsModule(BaseModule):
     """
@@ -65,19 +65,25 @@ class ThermalDynamicsModule(BaseModule):
         # Logging
         self.logger = logging.getLogger(f"ThermalDynamics.{name}")
 
+
+
     def initialize(self) -> None:
-        """Initialize the neural network model, scalers, and historical data."""
         try:
             self.logger.info("Initializing thermal dynamics model...")
 
-            # Initialize neural network model
+            # Normalize paths
+            for key in ["model_path", "scaler_path", "historical_data_path"]:
+                if key in self.config:
+                    self.config[key] = os.path.abspath(self.config[key])
+                    self.logger.info(f"Resolved {key} → {self.config[key]}")
+
             args = _args(**self.config.get("model_args"))
             self.mdl = Mod(args=args)
             self.mdl.data_ready()
 
-            # Load pre-trained model
             model_path = self.config.get("model_path")
             retrain = self.config.get("retrain")
+
             if retrain == "On":
                 self.mdl.train()
                 self.mdl.test()
@@ -86,8 +92,26 @@ class ThermalDynamicsModule(BaseModule):
                 self.mdl.check_show()
             else:
                 if model_path:
-                    self.mdl.load(model_path)
-                    self.logger.info(f"Loaded model from: {model_path}")
+                    abs_model_path = os.path.abspath(model_path)
+
+                    # --- Monkey patch step_mdl’s torch.load to always use abs_model_path ---
+                    orig_step_mdl = self.mdl.step_mdl
+                    def patched_step_mdl(*args, **kwargs):
+                        import torch as _torch
+                        orig_torch_load = _torch.load
+
+                        def cpu_load(_, *a, **kw):
+                            return orig_torch_load(abs_model_path, map_location=_torch.device("cpu"), *a, **kw)
+
+                        _torch.load = cpu_load
+                        try:
+                            return orig_step_mdl(*args, **kwargs)
+                        finally:
+                            _torch.load = orig_torch_load
+
+                    self.mdl.step_mdl = patched_step_mdl
+                    self.logger.info(f"Patched step_mdl() to use: {abs_model_path}")
+
                 else:
                     self.mdl.train()
                     self.mdl.test()
@@ -95,13 +119,11 @@ class ThermalDynamicsModule(BaseModule):
                     self.mdl.dynamiccheck()
                     self.mdl.check_show()
                     raise ValueError("model_path is required in configuration")
-
-                # Initialize dynamic step function
-                self.dynamic = self.mdl.step_mdl()
-
+                
+            # --- Call it to initialize ---
+            self.dynamic = self.mdl.step_mdl()
             # Load data scalers
             self._load_scalers()
-
             # Load historical data
             self._load_historical_data()
 

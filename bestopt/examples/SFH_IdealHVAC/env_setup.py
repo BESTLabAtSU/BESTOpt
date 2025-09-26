@@ -1,9 +1,15 @@
 from bestopt.env.core.config_manager import ConfigurationManager
 from bestopt.env.core.environment import BESTOptEnvironment
 from bestopt.scripts.runtime_plotter import create_hvac_dashboard
+import os
+from pathlib import Path
+
+base_dir = Path(__file__).resolve().parent 
+config_path = base_dir / "config_setup.json"
+cm = ConfigurationManager(str(config_path))
 
 # Configuration
-cm = ConfigurationManager("config_setup.json")
+# cm = ConfigurationManager(r"bestopt/examples/SFH_IdealHVAC/config_setup.json")
 env = BESTOptEnvironment(cm.config)
 
 # Create the enhanced HVAC dashboard
