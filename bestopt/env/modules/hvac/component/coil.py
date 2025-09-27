@@ -80,9 +80,10 @@ class CoilModule(BaseModule):
         C_wat = mdot_wat * self.cp_water_JkgK                  # [W/K]
 
         # No flow or no driving ΔT → no heat transfer
-        if C_air <= 0.0 or C_wat <= 0.0 or Ta_in == Tw_in:
+        if C_air <= 1e-9 or C_wat <= 1e-9 or Ta_in == Tw_in:
             state.air_outlet_temp_C = Ta_in
             state.water_outlet_temp_C = Tw_in
+            state.Q_W = 0.0
             self._record_state({"Ta_out": Ta_in, "Tw_out": Tw_in, "Q_W": 0.0})
             return state
 
@@ -96,7 +97,8 @@ class CoilModule(BaseModule):
             C_hot, C_cold = C_wat, C_air
             hot_side = "water"
 
-        C_min = C_hot if C_hot < C_cold else C_cold            # [W/K]
+        # C_min = C_hot if C_hot < C_cold else C_cold            # [W/K]
+        C_min = min(C_hot, C_cold)
         dT_in = Th_in - Tc_in                                   # [K] (°C diff)
 
         # 3) Effectiveness method: q in [W]

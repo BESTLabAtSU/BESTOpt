@@ -119,7 +119,7 @@ class FCUModule(BaseModule):
         # === 5. Coil step (pure thermodynamics) ===
         self.coil_state.airflow_m3s = self.fan_state.airflow_m3s
         self.coil_state.waterflow_m3s = self.pump_state.waterflow_m3s
-        self.coil_state.air_inlet_temp_C = getattr(action, "return_air_temperature", 26.0)
+        self.coil_state.air_inlet_temp_C = state.thermal_zones["zone0"].temperature
         self.coil_state.water_inlet_temp_C = self.chiller_state.chws_temp_c
 
         self.coil.step(self.coil_state, action, timestep)
