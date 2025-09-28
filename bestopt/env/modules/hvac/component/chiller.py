@@ -93,7 +93,7 @@ class ChillerModule(BaseModule):
         #coil_state.Q_W = q_cooling_W # update coil state for actual cooling provided by chiller
 
         # COP Calculation (Carnot)
-        T_evap_K = t_out_sp + 273.15
+        T_evap_K = t_out + 273.15
         T_cond_K = t_cond + 273.15
         delta_T = max(T_cond_K - T_evap_K, 0.5)
         cop_carnot = T_evap_K / delta_T
@@ -115,7 +115,7 @@ class ChillerModule(BaseModule):
             "cooling_W": q_cooling_W,
             "cop": cop,
             "power_W": power_W,
-            "chws_temp_c": t_out_sp,
+            "chws_temp_c": t_out,
             "chw_flow_m3s": flow_m3s,
             "energy_J": energy_J
         })
