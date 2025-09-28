@@ -327,11 +327,8 @@ class ThermalAction:
     supplyfan_flow_sp: Optional[float] = None           # m³/s air flow for supply fan
     
     chiller_cooling_W_sp: Optional[float] = 0.0         # Cooling demand [W]
-    chws_temp_c_sp: Optional[float] = 0.0               # Chilled water supply temp setpoint [°C]
-    condenser_temp_c_sp: Optional[float] = 35.0         # Condenser water temp setpoint [°C]
-    
-    cooling_tower_load_W_sp: Optional[float] = 0.0      # Cooling tower load [W]
-    wet_bulb_temp_c: Optional[float] = 25.0             # Wet bulb temperature for cooling tower [°C]
+    chws_temp_c_sp: Optional[float] = 5.0               # Chilled water supply temp setpoint [°C]; default 5°C
+    condenser_temp_c_sp: Optional[float] = 29.0         # Condenser water temp setpoint [°C]; default 29°C
     
     ice_tank_mode: Optional[str] = "idle"               # ["charge", "discharge", "idle"]
     ice_tank_power_W_sp: Optional[float] = 0.0          # Power setpoint in W

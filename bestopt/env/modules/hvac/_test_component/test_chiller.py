@@ -1,5 +1,5 @@
 from bestopt.env.modules.hvac.component.chiller import ChillerModule
-from bestopt.env.core.data_structure import ChillerState, ThermalAction, PumpState, CoilState
+from bestopt.env.core.data_structure import ChillerState, ThermalAction, PumpState, CoilState, CoolingTowerState
 
 # Configuration for chiller
 cfg = {
@@ -21,6 +21,7 @@ chiller.initialize()
 cs = ChillerState(component_id="main_chiller", component_type="", domain="")
 coil_state = CoilState()
 pump_state = PumpState()
+cooling_tower_state = CoolingTowerState()
 
 # Simulated schedules
 chw_return_schedule = [12.0, 12.5, 13.0, 12.0, 11.5, 11.0,
@@ -40,13 +41,13 @@ print("=== 24-Step Chiller Simulation ===")
 for t in range(24):
     coil_state.water_outlet_temp_C = chw_return_schedule[t]
     pump_state.waterflow_m3s = chw_flow_schedule[t]
-
+    cooling_tower_state.cw_supply_temp_c=cond_temp_schedule[t]
+        
     act = ThermalAction(
         chws_temp_c_sp=chws_sp_schedule[t],
-        condenser_temp_c_sp=cond_temp_schedule[t]
     )
 
-    chiller.step(cs, action=act, coil_state=coil_state, pump_state=pump_state, timestep=dt_sec)
+    chiller.step(cs, action=act, coil_state=coil_state, pump_state=pump_state, cooling_tower_state=cooling_tower_state, timestep=dt_sec)
 
     print(f"Step {t:02d} | Q={cs.cooling_W:.0f} W | COP={cs.cop:.2f} | CHW out={cs.chws_temp_c:.1f}°C | "
           f"Flow={cs.chw_flow_m3s:.3f} m³/s | P={cs.power_W:.1f} W | E_cum={cs.energy_J_cum:.1f} J")

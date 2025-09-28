@@ -110,8 +110,10 @@ class CoolingTowerModule(BaseModule):
         approach = self.min_approach_C + (1.0 - load_ratio) * (self.max_approach_C - self.min_approach_C)
 
         # === CW temperatures ===
-        cw_supply_temp_c = cw_supply_sp_c                                                              # to chiller
-        cw_return_temp_c = max(wet_bulb_temp_c+approach, cw_supply_sp_c) + self.temp_range_C           # from chiller
+        cw_supply_temp_c = max(wet_bulb_temp_c+approach, cw_supply_sp_c)                               # to chiller; cw supply temp is limited by weather condition and setpoint
+        cw_return_temp_c = max(wet_bulb_temp_c+approach, cw_supply_sp_c) + self.temp_range_C           # from chiller; assume a fixed delta T
+        cw_supply_temp_c = min(cw_supply_temp_c, 40.0)  # limit max supply temp to 40°C to avoid unrealistic high temps at low loads
+        cw_return_temp_c = min(cw_return_temp_c, 45.0)  # limit max return temp to 45°C to avoid unrealistic high temps at low loads
 
         # === CW flow rate (Q = m*cp*dT) ===
         m_dot = q_reject_W / (self.cp * self.temp_range_C)

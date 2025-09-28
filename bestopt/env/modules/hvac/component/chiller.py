@@ -6,18 +6,18 @@ from typing import Dict, Any
 import numpy as np
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, ChillerState, PumpState, CoilState
+from bestopt.env.core.data_structure import ThermalAction, ChillerState, PumpState, CoilState, CoolingTowerState
 
 
 class ChillerModule(BaseModule):
     """
     Chiller module with Carnot-based COP, cooling output, and CHW flow rate.
 
-    Input (from ThermalAction, CoilState and PumpState):
+    Input (from CoilState, PumpState, CoolingTowerState, ThermalAction):
         - CoilState.water_outlet_temp_C       : CHW inlet temp [°C]
         - ThermalAction.chws_temp_c_sp        : CHW outlet temp setpoint [°C]
         - PumpState.waterflow_m3s             : CHW flow rate [m³/s]
-        - ThermalAction.condenser_temp_c_sp   : Condenser inlet temp setpoint [°C]
+        - CoolingTowerState.cw_supply_temp_c  : Condenser inlet temp [°C]
 
     Output (written in-place to ChillerState):
         - cooling_W                           : Cooling output [W]
@@ -40,7 +40,7 @@ class ChillerModule(BaseModule):
           * CoilState.water_outlet_temp_C
           * PumpState.waterflow_m3s
           * ThermalAction.chws_temp_c_sp
-          * ThermalAction.condenser_temp_c_sp
+          * CoolingTowerState.cw_supply_temp_c
       - Writes IN-PLACE to ChillerState:
           * ChillerState.cooling_W
           * ChillerState.cop
@@ -52,7 +52,7 @@ class ChillerModule(BaseModule):
     Action:
       - Expects ThermalAction instances with:
           * chws_temp_c_sp
-          * condenser_temp_c_sp
+
       - Indirectly affects condenser-side heat rejection (used in cooling tower model)
     """
 
@@ -77,13 +77,15 @@ class ChillerModule(BaseModule):
         action: "ThermalAction",
         coil_state: "CoilState",
         pump_state: "PumpState",
+        cooling_tower_state: "CoolingTowerState",
         timestep: float
     ) -> Dict[str, Any]:
         t_in = float(getattr(coil_state, "water_outlet_temp_C", 12.0))
-        t_out_sp = np.clip(float(getattr(action, "chws_temp_c_sp", 7.0)),
-                           self.min_chws_temp, self.max_chws_temp)
+        t_out_k_lag1 = float(getattr(coil_state, "water_inlet_temp_C", 5.0))  # chiller last-step outlet temp
+        t_out_sp = np.clip(float(getattr(action, "chws_temp_c_sp", 5.0)),self.min_chws_temp, self.max_chws_temp)
         flow_m3s = float(getattr(pump_state, "waterflow_m3s", 0.01))
-        t_cond = float(getattr(action, "condenser_temp_c_sp", 35.0))
+        # t_cond_sp = float(getattr(action, "condenser_temp_c_sp", 35.0))
+        t_cond = float(getattr(cooling_tower_state, "cw_supply_temp_c", 35.0))  
 
         mass_flow_kg_s = self.rho * flow_m3s
         q_cooling_W = mass_flow_kg_s * self.cp * (t_in - t_out_sp)

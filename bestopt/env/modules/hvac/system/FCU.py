@@ -125,7 +125,7 @@ class FCUModule(BaseModule):
         self.coil.step(self.coil_state, action, timestep)
 
         # === 6. Chiller step ===
-        self.chiller.step(self.chiller_state, action, self.coil_state, self.pump_state, timestep)
+        self.chiller.step(self.chiller_state, action, self.coil_state, self.pump_state, self.tower_state, timestep)
 
         # === 7. Cooling tower step ===
         self.tower.step(self.tower_state, action, self.chiller_state, disturbance.weather, timestep)
@@ -157,7 +157,13 @@ class FCUModule(BaseModule):
             "SAT_actual_C": self.coil_state.air_outlet_temp_C,
             "SA_flow_actual_m3s": self.fan_state.airflow_m3s,
             "CHW_flow_actual_m3s": self.pump_state.waterflow_m3s,
+            "CHW_supply_temp_C": self.chiller_state.chws_temp_c,
             "FCU_power_total_W": power_total_W,
+            'FCU_fan_power_W': self.fan_state.power_W,
+            'FCU_pump_power_W': self.pump_state.power_W,
+            'FCU_chiller_power_W': self.chiller_state.power_W,
+            'FCU_tower_fan_power_W': self.tower_state.fan_power_W,
+            'FCU_tower_pump_power_W': self.tower_state.pump_power_W,
             "FCU_energy_cumulative_J": energy_total_J
         }
 
