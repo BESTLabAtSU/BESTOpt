@@ -3,6 +3,8 @@ from bestopt.env.core.data_structure import ChillerState, ThermalAction, PumpSta
 
 # Configuration for chiller
 cfg = {
+    "rated_capacity_W": 100_000,
+    "rated_cop": 5.5,
     "eta_carnot": 0.4,
     "min_cop": 2.0,
     "max_cop": 10.0,

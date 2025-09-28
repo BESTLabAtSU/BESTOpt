@@ -58,7 +58,8 @@ class ChillerModule(BaseModule):
 
     def __init__(self, config: Dict[str, Any], name: str = "chiller"):
         super().__init__(config, name)
-
+        self.rated_capacity_W = float(config.get("rated_capacity_W", 120_000.0))  # default: 120 kW
+        self.rated_cop = float(config.get("rated_cop", 5.5))  # typical COP
         self.eta_carnot = float(config.get("eta_carnot", 0.4))
         self.min_cop = float(config.get("min_cop", 2.0))
         self.max_cop = float(config.get("max_cop", 10.0))
@@ -86,7 +87,10 @@ class ChillerModule(BaseModule):
 
         mass_flow_kg_s = self.rho * flow_m3s
         q_cooling_W = mass_flow_kg_s * self.cp * (t_in - t_out_sp)
-        q_cooling_W = max(q_cooling_W, 0.0)
+        q_cooling_W = min(max(q_cooling_W, 0.0), self.rated_capacity_W*1.2) # assume maximum 120% overload
+        
+        t_out = t_in - q_cooling_W / (mass_flow_kg_s * self.cp) if mass_flow_kg_s > 0 else t_in # update chw out temp based on actual Q; else if no flow, t_out = t_in
+        #coil_state.Q_W = q_cooling_W # update coil state for actual cooling provided by chiller
 
         # COP Calculation (Carnot)
         T_evap_K = t_out_sp + 273.15
@@ -94,6 +98,7 @@ class ChillerModule(BaseModule):
         delta_T = max(T_cond_K - T_evap_K, 0.5)
         cop_carnot = T_evap_K / delta_T
         cop = np.clip(self.eta_carnot * cop_carnot, self.min_cop, self.max_cop)
+        cop = min(cop, self.rated_cop*1.2)  # limit COP to 120% of rated
 
         power_W = q_cooling_W / cop if cop > 0 else 0.0
         energy_J = power_W * timestep
@@ -101,7 +106,7 @@ class ChillerModule(BaseModule):
         # Update state
         state.cooling_W = q_cooling_W
         state.cop = cop
-        state.chws_temp_c = t_out_sp
+        state.chws_temp_c = t_out
         state.chw_flow_m3s = flow_m3s
         state.power_W = power_W
         state.energy_J_cum += energy_J
