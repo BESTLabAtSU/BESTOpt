@@ -48,11 +48,7 @@
               "rated_cop": 5.5
             },
             "tower": {
-              "rated_capacity_W": 300,
-              "rated_fan_power_W": 2000,
-              "pump_power_per_flow": 1800,
-              "min_approach_C": 3.0,
-              "max_approach_C": 7.0
+              "rated_capacity_W": 300
             }
           },
           "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule"
