@@ -25,10 +25,13 @@ cm.add_building_component(
             "trainday": 180,
             "testday": 1,
             "datapath": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv"),
-            "temp_unit": "C"
+            "temp_unit": "C",
+            "device": "cuda:0",
+            "save_name": "SFH_1"
         },
-        "model_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Trained_mdl", "PImodnn.pth"),
-        "scaler_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Scaler", "Eplus", "ModNN_scaler.pkl"),
+        "model_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Saved", "SFH_1",
+                                   "Trained_mdlEnco48_Deco96", "PI-modnn_180daysTest_on07-01.pth"),
+        "scaler_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Scaler", "SFH_1", "ModNN_scaler.pkl"),
         "historical_data_path": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv"),
         "encoder_length": 48,
         "retrain": "Off",
@@ -99,7 +102,6 @@ cm.add_environment(
         "enable_history": True,
         "logging_level": "INFO",
         "simulation_start_time": "2023-08-01 00:00:00",
-        "historical_data_path": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv")
     },
     class_path="bestopt.environment.BestOptEnvironment"
 )

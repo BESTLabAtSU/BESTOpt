@@ -73,10 +73,6 @@ class BESTOptEnvironment:
 
         self.simulation_start_time = env_params.get(
             'simulation_start_time')
-        historical_data_path = env_params.get(
-            'historical_data_path')
-        df = pd.read_csv(historical_data_path, index_col=0)
-        self.sim_data = df.loc[self.simulation_start_time:]
 
         # Get building configurations
         buildings_config = self.config.get('buildings', {})
@@ -302,14 +298,10 @@ class BESTOptEnvironment:
                             component_id=component_id
                         )
                     elif component_type == 'thermal_zones':
-                        # Initialize with default or config values
-                        initial_temp = self.sim_data["temp_room"].values[0]
-                        # zone_config = component_config.get('parameters', {})
-                        # initial_temp = zone_config.get('initial_temperature', 22.0)
                         state.thermal.thermal_zones[component_id] = BLDGTState(
                             component_id=component_id,
-                            temperature=initial_temp
-                        )
+                            temperature=self.building_modules[building_id][component_type]['zone0'].initial_temp
+                        ) #@TODO replace the hard coding "zone0" later
                     elif component_type == 'thermal_storage':
                         tes_config = component_config.get('parameters', {})
                         initial_temp = tes_config.get('initial_temperature', 22.0)
