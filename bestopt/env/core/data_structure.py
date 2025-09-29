@@ -385,6 +385,9 @@ class WeatherData:
 class PriceSignals:
     """Electricity and energy price signals."""
     electricity_price: float = 0.10  # $/kWh
+    peaksignal: bool = False
+    peak_end: int = 0
+    peak_start: int = 0
     demand_charge: float = 15.0  # $/kW
     carbon_intensity: float = 500.0  # gCO2/kWh
     gas_price: Optional[float] = None  # $/therm
@@ -394,6 +397,7 @@ class PriceSignals:
 class OccupancyData:
     """Occupancy and comfort requirements."""
     occupancy_count: int = 0
+    step_of_day: int = 0
     occupancy_fraction: float = 0.0  # 0-1
     comfort_temp_min: float = 20.0  # °C
     comfort_temp_max: float = 26.0  # °C

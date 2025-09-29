@@ -59,7 +59,7 @@ class BESTOptEnvironment:
         if not isinstance(self.res, int) or self.res <= 0:
             raise ValueError(f"'resolution' must be a positive int (seconds); got {self.res}")
 
-        self.dur = env_config.get("duration", 24 * 60 * 60)  # Run 1 day simulation if 'duration' is missing
+        self.dur = env_params.get("duration", 24 * 60 * 60)  # Run 1 day simulation if 'duration' is missing
         if not isinstance(self.dur, int) or self.dur <= 0:
             raise ValueError(f"'duration' must be a positive int (seconds); got {self.dur}")
 
@@ -71,9 +71,9 @@ class BESTOptEnvironment:
                 f"sim will run {self.total_step} steps (= floor)."
             )
 
-        self.simulation_start_time = configuration.get('environment', {}).get('parameters', {}).get(
+        self.simulation_start_time = env_params.get(
             'simulation_start_time')
-        historical_data_path = configuration.get('environment', {}).get('parameters', {}).get(
+        historical_data_path = env_params.get(
             'historical_data_path')
         df = pd.read_csv(historical_data_path, index_col=0)
         self.sim_data = df.loc[self.simulation_start_time:]
@@ -573,7 +573,7 @@ class BESTOptEnvironment:
                 # Update specific fields based on disturbance type
                 if dist_name == "weather":
                     self.disturbances[building_id].weather = dist_update
-                elif dist_name == "electricity_prices":
+                elif dist_name == "price":
                     self.disturbances[building_id].prices = dist_update
                 elif dist_name == "occupancy":
                     self.disturbances[building_id].occupancy = dist_update

@@ -45,6 +45,7 @@ class OccupancyModule(BaseModule):
     def step(self, current_step: int) -> Optional[OccupancyData]:
         step_of_day = current_step % 96
         self.current_occ.occupancy_fraction = self.daily[step_of_day]
+        self.current_occ.step_of_day = step_of_day
         return self.current_occ
 
     def reset(self) -> None:
