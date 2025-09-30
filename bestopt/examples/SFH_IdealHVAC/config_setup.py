@@ -25,10 +25,13 @@ cm.add_building_component(
             "trainday": 180,
             "testday": 1,
             "datapath": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv"),
-            "temp_unit": "C"
+            "temp_unit": "C",
+            "device": "cuda:0",
+            "save_name": "SFH_1"
         },
-        "model_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Trained_mdl", "PImodnn.pth"),
-        "scaler_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Scaler", "Eplus", "ModNN_scaler.pkl"),
+        "model_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Saved", "SFH_1",
+                                   "Trained_mdlEnco48_Deco96", "PI-modnn_180daysTest_on07-01.pth"),
+        "scaler_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Scaler", "SFH_1", "ModNN_scaler.pkl"),
         "historical_data_path": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv"),
         "encoder_length": 48,
         "retrain": "Off",
@@ -43,9 +46,9 @@ cm.add_building_component(
         "fan_ctrl": {"ctrl_type": "linear"},
         "coil": {"epsilon": 0.8},
         "pump": {"rated_flow_m3s": 0.005, "rated_power_W": 0.005*100_000},
-        "chiller": {"rated_capacity_W": 200, "rated_cop": 5.5},
+        "chiller": {"rated_capacity_W": 3500, "rated_cop": 4.5},
         "tower": {
-            "rated_capacity_W": 300,
+            "rated_capacity_W": 3500,
             "rated_fan_power_W": 2000,
             "pump_power_per_flow": 1800,
             "min_approach_C": 3.0,
@@ -61,6 +64,9 @@ cm.add_controller(
         "domain": "thermal",
         "type": "rule-based",
         "mode": "cooling",
+        "precooling": {
+                "degree": 0,
+                "hours": 0}
     },
     class_path="bestopt.env.controllers.thermal.SupervisoryController"
 )
@@ -83,21 +89,26 @@ cm.add_disturbance(
     class_path="bestopt.env.disturbances.occupancy.OccupancyModule"
 )
 
+cm.add_disturbance(
+    "price",
+    parameters={},
+    class_path="bestopt.env.disturbances.price.PriceModule"
+)
+
 cm.add_environment(
     parameters={
         "resolution": 900,
-        "duration": 86400,
+        "duration": 86400*3,
         "enable_history": True,
         "logging_level": "INFO",
         "simulation_start_time": "2023-08-01 00:00:00",
-        "historical_data_path": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv")
     },
     class_path="bestopt.environment.BestOptEnvironment"
 )
 
 cm.select_buildings(["SFH_1"])
 cm.select_controller_for_building_domain("SFH_1", "thermal", "SFH_1_THERMAL_Supervisory")
-cm.select_disturbances(["weather", "occupancy"])
+cm.select_disturbances(["weather", "occupancy", "price"])
 cm.select_environment()
 
 warnings = cm.validate_configuration()

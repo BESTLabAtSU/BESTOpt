@@ -12,7 +12,7 @@ cm = ConfigurationManager(str(config_path))
 env = BESTOptEnvironment(cm.config)
 
 # Create the enhanced HVAC dashboard
-plotter = create_hvac_dashboard(max_points=200)
+plotter = create_hvac_dashboard(max_points=96*3)
 
 # Run Simulation
 for timestep in range(env.total_step):
@@ -52,3 +52,4 @@ for timestep in range(env.total_step):
     )
 
 plotter.stop()
+plotter.save_as_gif('sfh1_dashboard.gif', fps=20)

@@ -48,6 +48,11 @@ class ThermalDynamicsModule(BaseModule):
         self.zone_id = config.get("zone_id", "main_zone")
         self.scaler_path = config["scaler_path"]  # Required
         self.historical_data_path = config["historical_data_path"]  # Required
+        simulation_start_time = config["simulation_start_time"]
+        # grab init temperature when register
+        df = pd.read_csv(self.historical_data_path, index_col=0)
+        sim_data = df.loc[simulation_start_time:]
+        self.initial_temp = sim_data["temp_room"].values[0]
 
         # Model components
         self.mdl = None
@@ -87,11 +92,13 @@ class ThermalDynamicsModule(BaseModule):
             if retrain == "On":
                 self.mdl.train()
                 self.mdl.test()
-                self.mdl.check()
-                self.mdl.dynamiccheck()
-                self.mdl.check_show()
+                # self.mdl.check()
+                # self.mdl.dynamiccheck()
+                # self.mdl.check_show()
             else:
                 if model_path:
+                    # @TODO I feel we need a clean way to do it?
+                    # if we only need to transfer from cuda to cpu, the package can take this args directly
                     abs_model_path = os.path.abspath(model_path)
 
                     # --- Monkey patch step_mdl’s torch.load to always use abs_model_path ---

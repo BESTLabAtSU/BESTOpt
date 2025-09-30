@@ -59,7 +59,7 @@ class BESTOptEnvironment:
         if not isinstance(self.res, int) or self.res <= 0:
             raise ValueError(f"'resolution' must be a positive int (seconds); got {self.res}")
 
-        self.dur = env_config.get("duration", 24 * 60 * 60)  # Run 1 day simulation if 'duration' is missing
+        self.dur = env_params.get("duration", 24 * 60 * 60)  # Run 1 day simulation if 'duration' is missing
         if not isinstance(self.dur, int) or self.dur <= 0:
             raise ValueError(f"'duration' must be a positive int (seconds); got {self.dur}")
 
@@ -71,12 +71,8 @@ class BESTOptEnvironment:
                 f"sim will run {self.total_step} steps (= floor)."
             )
 
-        self.simulation_start_time = configuration.get('environment', {}).get('parameters', {}).get(
+        self.simulation_start_time = env_params.get(
             'simulation_start_time')
-        historical_data_path = configuration.get('environment', {}).get('parameters', {}).get(
-            'historical_data_path')
-        df = pd.read_csv(historical_data_path, index_col=0)
-        self.sim_data = df.loc[self.simulation_start_time:]
 
         # Get building configurations
         buildings_config = self.config.get('buildings', {})
@@ -302,14 +298,10 @@ class BESTOptEnvironment:
                             component_id=component_id
                         )
                     elif component_type == 'thermal_zones':
-                        # Initialize with default or config values
-                        initial_temp = self.sim_data["temp_room"].values[0]
-                        # zone_config = component_config.get('parameters', {})
-                        # initial_temp = zone_config.get('initial_temperature', 22.0)
                         state.thermal.thermal_zones[component_id] = BLDGTState(
                             component_id=component_id,
-                            temperature=initial_temp
-                        )
+                            temperature=self.building_modules[building_id][component_type]['zone0'].initial_temp
+                        ) #@TODO replace the hard coding "zone0" later
                     elif component_type == 'thermal_storage':
                         tes_config = component_config.get('parameters', {})
                         initial_temp = tes_config.get('initial_temperature', 22.0)
@@ -573,7 +565,7 @@ class BESTOptEnvironment:
                 # Update specific fields based on disturbance type
                 if dist_name == "weather":
                     self.disturbances[building_id].weather = dist_update
-                elif dist_name == "electricity_prices":
+                elif dist_name == "price":
                     self.disturbances[building_id].prices = dist_update
                 elif dist_name == "occupancy":
                     self.disturbances[building_id].occupancy = dist_update

@@ -1,0 +1,435 @@
+{
+  "buildings": {
+    "SFH_1": {
+      "thermal_zones": {
+        "zone0": {
+          "parameters": {
+            "model_args": {
+              "para": {
+                "Int_h": 8,
+                "Ext_h": 14,
+                "epochs": 20
+              },
+              "modeltype": "PI-modnn",
+              "startday": 1,
+              "trainday": 180,
+              "testday": 1,
+              "temp_unit": "C",
+              "device": "cuda:0",
+              "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv",
+              "save_name": "SFH_1"
+            },
+            "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/SFH_1/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+            "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/SFH_1/ModNN_scaler.pkl",
+            "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv",
+            "encoder_length": 48,
+            "retrain": "Off",
+            "simulation_start_time": "2023-08-01 00:00:00"
+          },
+          "class_path": "bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+        }
+      },
+      "hvac_systems": {
+        "fcu": {
+          "parameters": {
+            "fan": {
+              "rated_flow_m3s": 1,
+              "rated_power_W": 1000
+            },
+            "fan_ctrl": {
+              "ctrl_type": "linear"
+            },
+            "coil": {
+              "epsilon": 0.8
+            },
+            "pump": {
+              "rated_flow_m3s": 0.005,
+              "rated_power_W": 500.0
+            },
+            "chiller": {
+              "rated_capacity_W": 3500,
+              "rated_cop": 4.5
+            },
+            "tower": {
+              "rated_capacity_W": 3500,
+              "rated_fan_power_W": 2000,
+              "pump_power_per_flow": 1800,
+              "min_approach_C": 3.0,
+              "max_approach_C": 7.0
+            }
+          },
+          "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule"
+        }
+      }
+    },
+    "SFH_2": {
+      "thermal_zones": {
+        "zone0": {
+          "parameters": {
+            "model_args": {
+              "para": {
+                "Int_h": 8,
+                "Ext_h": 14,
+                "epochs": 20
+              },
+              "modeltype": "PI-modnn",
+              "startday": 1,
+              "trainday": 180,
+              "testday": 1,
+              "temp_unit": "C",
+              "device": "cuda:0",
+              "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_2.csv",
+              "save_name": "SFH_2"
+            },
+            "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/SFH_2/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+            "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/SFH_2/ModNN_scaler.pkl",
+            "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_2.csv",
+            "encoder_length": 48,
+            "retrain": "Off",
+            "simulation_start_time": "2023-08-01 00:00:00"
+          },
+          "class_path": "bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+        }
+      },
+      "hvac_systems": {
+        "fcu": {
+          "parameters": {
+            "fan": {
+              "rated_flow_m3s": 1,
+              "rated_power_W": 1000
+            },
+            "fan_ctrl": {
+              "ctrl_type": "linear"
+            },
+            "coil": {
+              "epsilon": 0.8
+            },
+            "pump": {
+              "rated_flow_m3s": 0.005,
+              "rated_power_W": 500.0
+            },
+            "chiller": {
+              "rated_capacity_W": 3500,
+              "rated_cop": 4.5
+            },
+            "tower": {
+              "rated_capacity_W": 3500,
+              "rated_fan_power_W": 2000,
+              "pump_power_per_flow": 1800,
+              "min_approach_C": 3.0,
+              "max_approach_C": 7.0
+            }
+          },
+          "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule"
+        }
+      }
+    },
+    "SFH_3": {
+      "thermal_zones": {
+        "zone0": {
+          "parameters": {
+            "model_args": {
+              "para": {
+                "Int_h": 8,
+                "Ext_h": 14,
+                "epochs": 20
+              },
+              "modeltype": "PI-modnn",
+              "startday": 1,
+              "trainday": 180,
+              "testday": 1,
+              "temp_unit": "C",
+              "device": "cuda:0",
+              "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_3.csv",
+              "save_name": "SFH_3"
+            },
+            "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/SFH_3/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+            "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/SFH_3/ModNN_scaler.pkl",
+            "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_3.csv",
+            "encoder_length": 48,
+            "retrain": "Off",
+            "simulation_start_time": "2023-08-01 00:00:00"
+          },
+          "class_path": "bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+        }
+      },
+      "hvac_systems": {
+        "fcu": {
+          "parameters": {
+            "fan": {
+              "rated_flow_m3s": 1,
+              "rated_power_W": 1000
+            },
+            "fan_ctrl": {
+              "ctrl_type": "linear"
+            },
+            "coil": {
+              "epsilon": 0.8
+            },
+            "pump": {
+              "rated_flow_m3s": 0.005,
+              "rated_power_W": 500.0
+            },
+            "chiller": {
+              "rated_capacity_W": 3500,
+              "rated_cop": 4.5
+            },
+            "tower": {
+              "rated_capacity_W": 3500,
+              "rated_fan_power_W": 2000,
+              "pump_power_per_flow": 1800,
+              "min_approach_C": 3.0,
+              "max_approach_C": 7.0
+            }
+          },
+          "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule"
+        }
+      }
+    },
+    "SFH_4": {
+      "thermal_zones": {
+        "zone0": {
+          "parameters": {
+            "model_args": {
+              "para": {
+                "Int_h": 8,
+                "Ext_h": 14,
+                "epochs": 20
+              },
+              "modeltype": "PI-modnn",
+              "startday": 1,
+              "trainday": 180,
+              "testday": 1,
+              "temp_unit": "C",
+              "device": "cuda:0",
+              "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_4.csv",
+              "save_name": "SFH_4"
+            },
+            "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/SFH_4/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+            "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/SFH_4/ModNN_scaler.pkl",
+            "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_4.csv",
+            "encoder_length": 48,
+            "retrain": "Off",
+            "simulation_start_time": "2023-08-01 00:00:00"
+          },
+          "class_path": "bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+        }
+      },
+      "hvac_systems": {
+        "fcu": {
+          "parameters": {
+            "fan": {
+              "rated_flow_m3s": 1,
+              "rated_power_W": 1000
+            },
+            "fan_ctrl": {
+              "ctrl_type": "linear"
+            },
+            "coil": {
+              "epsilon": 0.8
+            },
+            "pump": {
+              "rated_flow_m3s": 0.005,
+              "rated_power_W": 500.0
+            },
+            "chiller": {
+              "rated_capacity_W": 3500,
+              "rated_cop": 4.5
+            },
+            "tower": {
+              "rated_capacity_W": 3500,
+              "rated_fan_power_W": 2000,
+              "pump_power_per_flow": 1800,
+              "min_approach_C": 3.0,
+              "max_approach_C": 7.0
+            }
+          },
+          "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule"
+        }
+      }
+    },
+    "SFH_5": {
+      "thermal_zones": {
+        "zone0": {
+          "parameters": {
+            "model_args": {
+              "para": {
+                "Int_h": 8,
+                "Ext_h": 14,
+                "epochs": 20
+              },
+              "modeltype": "PI-modnn",
+              "startday": 1,
+              "trainday": 180,
+              "testday": 1,
+              "temp_unit": "C",
+              "device": "cuda:0",
+              "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_5.csv",
+              "save_name": "SFH_5"
+            },
+            "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/SFH_5/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+            "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/SFH_5/ModNN_scaler.pkl",
+            "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_5.csv",
+            "encoder_length": 48,
+            "retrain": "Off",
+            "simulation_start_time": "2023-08-01 00:00:00"
+          },
+          "class_path": "bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+        }
+      },
+      "hvac_systems": {
+        "fcu": {
+          "parameters": {
+            "fan": {
+              "rated_flow_m3s": 1,
+              "rated_power_W": 1000
+            },
+            "fan_ctrl": {
+              "ctrl_type": "linear"
+            },
+            "coil": {
+              "epsilon": 0.8
+            },
+            "pump": {
+              "rated_flow_m3s": 0.005,
+              "rated_power_W": 500.0
+            },
+            "chiller": {
+              "rated_capacity_W": 3500,
+              "rated_cop": 4.5
+            },
+            "tower": {
+              "rated_capacity_W": 3500,
+              "rated_fan_power_W": 2000,
+              "pump_power_per_flow": 1800,
+              "min_approach_C": 3.0,
+              "max_approach_C": 7.0
+            }
+          },
+          "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule"
+        }
+      }
+    }
+  },
+  "controllers": {
+    "SFH_1_thermal_SFH_1_THERMAL_Supervisory": {
+      "parameters": {
+        "domain": "thermal",
+        "type": "rule-based",
+        "mode": "cooling",
+        "base_cooling": 22,
+        "base_heating": 20.0,
+        "precooling": {
+          "degree": 0,
+          "hours": 0
+        }
+      },
+      "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    },
+    "SFH_2_thermal_SFH_2_THERMAL_Supervisory": {
+      "parameters": {
+        "domain": "thermal",
+        "type": "rule-based",
+        "mode": "cooling",
+        "base_cooling": 22,
+        "base_heating": 20.0,
+        "precooling": {
+          "degree": 0,
+          "hours": 0
+        }
+      },
+      "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    },
+    "SFH_3_thermal_SFH_3_THERMAL_Supervisory": {
+      "parameters": {
+        "domain": "thermal",
+        "type": "rule-based",
+        "mode": "cooling",
+        "base_cooling": 22,
+        "base_heating": 20.0,
+        "precooling": {
+          "degree": 0,
+          "hours": 0
+        }
+      },
+      "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    },
+    "SFH_4_thermal_SFH_4_THERMAL_Supervisory": {
+      "parameters": {
+        "domain": "thermal",
+        "type": "rule-based",
+        "mode": "cooling",
+        "base_cooling": 24,
+        "base_heating": 20.0,
+        "precooling": {
+          "degree": 0,
+          "hours": 0
+        }
+      },
+      "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    },
+    "SFH_5_thermal_SFH_5_THERMAL_Supervisory": {
+      "parameters": {
+        "domain": "thermal",
+        "type": "rule-based",
+        "mode": "cooling",
+        "base_cooling": 24,
+        "base_heating": 20.0,
+        "precooling": {
+          "degree": 0,
+          "hours": 0
+        }
+      },
+      "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    }
+  },
+  "active_controllers": {
+    "SFH_1": {
+      "thermal": "SFH_1_thermal_SFH_1_THERMAL_Supervisory"
+    },
+    "SFH_2": {
+      "thermal": "SFH_2_thermal_SFH_2_THERMAL_Supervisory"
+    },
+    "SFH_3": {
+      "thermal": "SFH_3_thermal_SFH_3_THERMAL_Supervisory"
+    },
+    "SFH_4": {
+      "thermal": "SFH_4_thermal_SFH_4_THERMAL_Supervisory"
+    },
+    "SFH_5": {
+      "thermal": "SFH_5_thermal_SFH_5_THERMAL_Supervisory"
+    }
+  },
+  "local_controllers": {},
+  "disturbances": {
+    "weather": {
+      "parameters": {
+        "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/weather/weather.csv",
+        "simulation_start_time": "2023-08-01 00:00:00"
+      },
+      "class_path": "bestopt.env.disturbances.weather.WeatherModule"
+    },
+    "occupancy": {
+      "parameters": {
+        "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/occupancy/occupancy.csv",
+        "simulation_start_time": "2023-08-01 00:00:00"
+      },
+      "class_path": "bestopt.env.disturbances.occupancy.OccupancyModule"
+    },
+    "price": {
+      "parameters": {},
+      "class_path": "bestopt.env.disturbances.price.PriceModule"
+    }
+  },
+  "environment": {
+    "parameters": {
+      "resolution": 900,
+      "duration": 259200,
+      "enable_history": true,
+      "logging_level": "INFO",
+      "simulation_start_time": "2023-08-01 00:00:00"
+    },
+    "class_path": "bestopt.environment.BestOptEnvironment"
+  },
+  "grid": {}
+}

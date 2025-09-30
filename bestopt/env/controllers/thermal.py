@@ -20,6 +20,7 @@ class SupervisoryController(BaseModule):
         # Control parameters
         self.domain = config.get("domain", "thermal")
         self.mode = HVACMode(config.get("mode", "auto"))
+        self.precool_config = config.get("precooling", None)
 
         # Comfort settings
         # @TODO These settings should be more dynamic in the future
@@ -73,13 +74,8 @@ class SupervisoryController(BaseModule):
                 self.logger.warning("Could not extract temperature from state")
                 current_temp = 22.0  # Default
 
-            # Get occupancy information
-            occupancy = disturbance.occupancy.occupancy_fraction
-
             # Determine active setpoints based on occupancy
-            cooling_setpoint, heating_setpoint = self._get_active_setpoints(
-                occupancy, disturbance
-            )
+            cooling_setpoint, heating_setpoint = self._get_active_setpoints(disturbance, self.precool_config)
 
             supply_air_flow_rate, supply_air_temperature = self._supervisory(
                 current_temp=current_temp,
@@ -107,8 +103,11 @@ class SupervisoryController(BaseModule):
             # Return safe default action
             return ThermalAction(thermal_load=0.0)
 
-    def _get_active_setpoints(self, occupancy, disturbance) -> tuple:
+    def _get_active_setpoints(self, disturbance, precool_config) -> tuple:
         """Determine active setpoints based on occupancy and schedule."""
+        occupancy = disturbance.occupancy.occupancy_fraction
+        step_of_day = disturbance.occupancy.step_of_day
+
         base_cooling = self.base_cooling
         base_heating = self.base_heating
 
@@ -120,6 +119,17 @@ class SupervisoryController(BaseModule):
         else:
             cooling_setpoint = base_cooling + 2.0
             heating_setpoint = base_heating - 2.0
+
+        # Check if need pre-cooling
+        if precool_config:
+            self.pre_degree = precool_config.get("degree", 2.0)
+            self.pre_hour = precool_config.get("hours", 2)
+            if step_of_day >= disturbance.prices.peak_start - self.pre_hour * 4 and step_of_day < disturbance.prices.peak_start:
+                cooling_setpoint = base_cooling - self.pre_degree
+                heating_setpoint = base_heating + self.pre_degree
+        else:
+            self.pre_degree = 0
+            self.pre_hour = 0
 
         return cooling_setpoint, heating_setpoint
 
