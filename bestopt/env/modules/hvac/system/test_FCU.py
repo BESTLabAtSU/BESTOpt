@@ -11,7 +11,7 @@ from bestopt.env.core.data_structure import (
 # === FCU System Config ===
 fcu_config = {
     "fan": {"rated_flow_m3s": 8, "rated_power_W": 8*1000}, #fan_power_per_flow ≈ 1,000 – 1,500 W per m³/s
-    "fan_ctrl": {"ctrl_type": "linear"},
+    "fan_ctrl": {"ctrl_type": "linear", "rated_flow_m3s": 8},
     "coil": {"epsilon": 0.8},
     "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 0.01*100_000}, # pump_power_per_flow = 100,000 W per m³/s
     "chiller": {"rated_capacity_W": 90_000, "rated_cop": 5.5},
