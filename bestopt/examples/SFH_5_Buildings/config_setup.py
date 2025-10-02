@@ -17,24 +17,24 @@ NUM_BUILDINGS = 5
 
 BUILDING_SETPOINTS = {
     "SFH_1": {
-        "base_cooling": 22,  # °C
+        "base_cooling": 22,   # °C
         "base_heating": 20.0  # °C
     },
     "SFH_2": {
-        "base_cooling": 22,  # °C
+        "base_cooling": 22,   # °C
         "base_heating": 20.0  # °C
     },
 
     "SFH_3": {
-        "base_cooling": 22,  # °C
+        "base_cooling": 22,   # °C
         "base_heating": 20.0  # °C
     },
     "SFH_4": {
-        "base_cooling": 24,  # °C
+        "base_cooling": 24,   # °C
         "base_heating": 20.0  # °C
     },
     "SFH_5": {
-        "base_cooling": 24,  # °C
+        "base_cooling": 24,   # °C
         "base_heating": 20.0  # °C
     },
 }

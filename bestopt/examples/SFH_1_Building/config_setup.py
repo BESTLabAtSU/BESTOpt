@@ -11,6 +11,7 @@ logging.basicConfig(
 )
 PROJECT_ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(PROJECT_ROOT_PATH))
+
 # @TODO some dataframes are used for multiple modules, need to clean up later
 cm = ConfigurationManager()
 logging.info("Started a fresh, empty configuration.")
@@ -39,7 +40,11 @@ cm.add_building_component(
     },
     class_path="bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
 )
-
+# @TODO need to use standardized system name, for example,
+# if one system is fan-coil-chiller, another is fan-coil-chiller-tower, or fan-coil-heatpump
+# the system package need to have separate name for that
+# I will use same logic for DERs
+# or just call hvac system and it can be structured dynamically
 cm.add_building_component(
     "SFH_1", "hvac_systems", "fcu",
     parameters={
@@ -57,6 +62,15 @@ cm.add_building_component(
         }
     },
     class_path="bestopt.env.modules.hvac.system.FCU.FCUModule"
+)
+
+cm.add_building_component(
+    "SFH_1", "der_systems", "pv_bat",
+    parameters={
+        "system_config": {"pv": {"rated_capacity_kW": 2},
+                          "bat": {"rated_capacity_kWh": 5}},
+    },
+    class_path="bestopt.env.modules.ders.system.der.DERModule"
 )
 
 cm.add_controller(
