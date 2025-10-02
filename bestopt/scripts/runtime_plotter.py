@@ -1,8 +1,3 @@
-"""
-Unified HVAC Dashboard Module - Updated Version
-Contains Individual Building Dashboard and Multi-Building Dashboard with GIF export
-"""
-
 import matplotlib
 matplotlib.use("QtAgg")  # Uncomment for interactive display
 import matplotlib.pyplot as plt
@@ -12,9 +7,6 @@ from PIL import Image
 import io
 
 
-# ==============================================================================
-# INDIVIDUAL BUILDING DASHBOARD (Unchanged)
-# ==============================================================================
 class HVACDashboard:
     """Dashboard for monitoring a single building's HVAC system"""
 
@@ -35,7 +27,7 @@ class HVACDashboard:
 
         # Create figure with 5 subplots
         plt.ion()
-        self.fig = plt.figure(figsize=(6, 6))
+        self.fig = plt.figure(figsize=(6, 6), dpi=300)
         self.fig.canvas.manager.set_window_title(window_title)
 
         # Create subplots in a grid layout
@@ -49,18 +41,28 @@ class HVACDashboard:
         # Initialize lines
         self.temp_line, = self.ax1.plot([], [], 'b-', linewidth=2, label='Zone Temperature')
         self.cool_setpt_line, = self.ax1.plot([], [], '--', linewidth=1.5,
-                                              label='Setpoint', color='gray',
+                                              label='Cooling Setpoint', color='gray',
                                               drawstyle='steps-post')
-        self.heat_setpt_line, = self.ax1.plot([], [], '--', linewidth=1.5, color='gray',
+        self.heat_setpt_line, = self.ax1.plot([], [], '--', linewidth=1.5,
+                                              label='Heating Setpoint', color='gray',
                                               drawstyle='steps-post')
         self.thermal_load_line, = self.ax2.plot([], [], 'orange', linewidth=2,
                                                 label='Thermal Load')
         self.power_line, = self.ax3.plot([], [], 'purple', linewidth=2,
                                          label='HVAC Power')
+
+        # FIX: Add lines for both actual and setpoint values
         self.sat_real_line, = self.ax4.plot([], [], 'g-', linewidth=2,
                                             label='Actual SAT')
+        self.sat_setpt_line, = self.ax4.plot([], [], 'g--', linewidth=1.5,
+                                             label='Setpoint SAT', alpha=0.7,
+                                             drawstyle='steps-post')
+
         self.saf_real_line, = self.ax5.plot([], [], 'c-', linewidth=2,
                                             label='Actual Flow')
+        self.saf_setpt_line, = self.ax5.plot([], [], 'c--', linewidth=1.5,
+                                             label='Setpoint Flow', alpha=0.7,
+                                             drawstyle='steps-post')
 
         self._setup_axes()
         plt.tight_layout()
@@ -74,31 +76,31 @@ class HVACDashboard:
         self.ax1.set_title('Zone Temperature & Setpoints', fontsize=7, fontweight='bold')
         self.ax1.set_ylabel('Temperature (°C)', fontsize=7)
         self.ax1.grid(True, alpha=0.3)
-        self.ax1.legend(loc='upper right', fontsize=7)
+        self.ax1.legend(loc='upper right', fontsize=6)
 
         self.ax2.set_title('HVAC Thermal Load', fontsize=7, fontweight='bold')
         self.ax2.set_xlabel('Timestep', fontsize=7)
         self.ax2.set_ylabel('Thermal Load (W)', fontsize=7)
         self.ax2.grid(True, alpha=0.3)
-        self.ax2.legend(loc='upper right', fontsize=7)
+        self.ax2.legend(loc='upper right', fontsize=6)
 
         self.ax3.set_title('HVAC Power Consumption', fontsize=7, fontweight='bold')
         self.ax3.set_xlabel('Timestep', fontsize=7)
         self.ax3.set_ylabel('Power (W)', fontsize=7)
         self.ax3.grid(True, alpha=0.3)
-        self.ax3.legend(loc='upper right', fontsize=7)
+        self.ax3.legend(loc='upper right', fontsize=6)
 
         self.ax4.set_title('Supply Air Temperature', fontsize=7, fontweight='bold')
         self.ax4.set_xlabel('Timestep', fontsize=7)
         self.ax4.set_ylabel('Temperature (°C)', fontsize=7)
         self.ax4.grid(True, alpha=0.3)
-        self.ax4.legend(loc='upper right', fontsize=7)
+        self.ax4.legend(loc='upper right', fontsize=6)
 
         self.ax5.set_title('Supply Air Flow Rate', fontsize=7, fontweight='bold')
         self.ax5.set_xlabel('Timestep', fontsize=7)
         self.ax5.set_ylabel('Flow Rate (m³/s)', fontsize=7)
         self.ax5.grid(True, alpha=0.3)
-        self.ax5.legend(loc='upper right', fontsize=7)
+        self.ax5.legend(loc='upper right', fontsize=6)
 
     def add_data_point(self, timestep, zone_temperature, hvac_thermal_load, hvac_power,
                        supervisory_cooling_setpoint=None, supervisory_heating_setpoint=None,
@@ -135,8 +137,12 @@ class HVACDashboard:
         self.heat_setpt_line.set_data(x_data, np.array(self.heating_setpoints, dtype=float))
         self.thermal_load_line.set_data(x_data, list(self.hvac_thermal_loads))
         self.power_line.set_data(x_data, list(self.hvac_powers))
+
+        # FIX: Update both actual and setpoint lines
         self.sat_real_line.set_data(x_data, np.array(self.supply_air_temps_real, dtype=float))
+        self.sat_setpt_line.set_data(x_data, np.array(self.supply_air_temps_setpt, dtype=float))
         self.saf_real_line.set_data(x_data, np.array(self.supply_air_flows_real, dtype=float))
+        self.saf_setpt_line.set_data(x_data, np.array(self.supply_air_flows_setpt, dtype=float))
 
         if len(x_data) > 1:
             self._autoscale_axes()
@@ -163,16 +169,42 @@ class HVACDashboard:
         margin = max(0.5, (tmax - tmin) * 0.1)
         self.ax1.set_ylim(tmin - margin, tmax + margin)
 
-        # Thermal load and power
+        # Thermal load
         if len(self.hvac_thermal_loads) > 0:
             lmin, lmax = min(self.hvac_thermal_loads), max(self.hvac_thermal_loads)
             lmargin = (lmax - lmin) * 0.1 if lmax != lmin else 100
             self.ax2.set_ylim(lmin - lmargin, lmax + lmargin)
 
+        # Power
         if len(self.hvac_powers) > 0:
             pmin, pmax = min(self.hvac_powers), max(self.hvac_powers)
             pmargin = (pmax - pmin) * 0.1 if pmax != pmin else 10
             self.ax3.set_ylim(pmin - pmargin, pmax + pmargin)
+
+        # FIX: Supply Air Temperature autoscaling
+        all_sat = np.concatenate([
+            np.array(self.supply_air_temps_real, dtype=float),
+            np.array(self.supply_air_temps_setpt, dtype=float)
+        ])
+        if len(all_sat) > 0 and not np.all(np.isnan(all_sat)):
+            sat_min, sat_max = np.nanmin(all_sat), np.nanmax(all_sat)
+            sat_margin = max(0.5, (sat_max - sat_min) * 0.1)
+            self.ax4.set_ylim(sat_min - sat_margin, sat_max + sat_margin)
+
+        # FIX: Supply Air Flow autoscaling
+        all_saf = np.concatenate([
+            np.array(self.supply_air_flows_real, dtype=float),
+            np.array(self.supply_air_flows_setpt, dtype=float)
+        ])
+        if len(all_saf) > 0 and not np.all(np.isnan(all_saf)):
+            saf_min, saf_max = np.nanmin(all_saf), np.nanmax(all_saf)
+            saf_margin = max(0.001, (saf_max - saf_min) * 0.1)
+            self.ax5.set_ylim(saf_min - saf_margin, saf_max + saf_margin)
+
+    def save_as_gif(self, filename='hvac_dashboard.gif', fps=10):
+        """Save the current figure as a GIF (requires capturing frames during simulation)"""
+        print(f"⚠ Note: GIF saving requires frame capture during simulation")
+        print(f"  Consider using screen recording or implementing frame capture in add_data_point()")
 
     def stop(self):
         """Stop the plotter"""
@@ -181,9 +213,7 @@ class HVACDashboard:
         plt.show()
 
 
-# ==============================================================================
-# MULTI-BUILDING DASHBOARD WITH GIF EXPORT
-# ==============================================================================
+# Keep the rest of MultiHVACDashboard class unchanged...
 class MultiHVACDashboard:
     """Dashboard for monitoring multiple buildings with 4 subplots and GIF export"""
 
@@ -214,20 +244,20 @@ class MultiHVACDashboard:
         self.color_map = {name: self.colors[i] for i, name in enumerate(building_names)}
 
         # Create figure with 4 subplots
-        plt.ion()  # Enable interactive mode
-        self.fig = plt.figure(figsize=(14, 10))
+        plt.ion()
+        self.fig = plt.figure(figsize=(14, 10), dpi=300)
         gs = self.fig.add_gridspec(2, 2, hspace=0.35, wspace=0.3)
 
-        self.ax1 = self.fig.add_subplot(gs[0, 0])  # Individual temperatures (line)
-        self.ax2 = self.fig.add_subplot(gs[0, 1])  # Aggregated electric load (line)
-        self.ax3 = self.fig.add_subplot(gs[1, 0])  # Real-time thermal load (bar)
-        self.ax4 = self.fig.add_subplot(gs[1, 1])  # Aggregated electric load (bar)
+        self.ax1 = self.fig.add_subplot(gs[0, 0])
+        self.ax2 = self.fig.add_subplot(gs[0, 1])
+        self.ax3 = self.fig.add_subplot(gs[1, 0])
+        self.ax4 = self.fig.add_subplot(gs[1, 1])
 
         # Initialize line plots
         self.temp_lines = {}
         for name in building_names:
             line, = self.ax1.plot([], [], linewidth=2.5, label=name,
-                                 color=self.color_map[name])
+                                  color=self.color_map[name])
             self.temp_lines[name] = line
 
         self.power_line, = self.ax2.plot([], [], 'r-', linewidth=3, label='Total Power')
@@ -243,42 +273,28 @@ class MultiHVACDashboard:
 
     def _setup_axes(self):
         """Configure axes"""
-        # Temperature subplot
         self.ax1.set_title('Individual Space Air Temperature', fontsize=12, fontweight='bold')
         self.ax1.set_xlabel('Timestep', fontsize=10)
         self.ax1.set_ylabel('Temperature (°C)', fontsize=10)
         self.ax1.grid(True, alpha=0.3)
         self.ax1.legend(loc='best', fontsize=9)
 
-        # Aggregated power line plot
         self.ax2.set_title('Aggregated Electric Load', fontsize=12, fontweight='bold')
         self.ax2.set_xlabel('Timestep', fontsize=10)
         self.ax2.set_ylabel('Power (W)', fontsize=10)
         self.ax2.grid(True, alpha=0.3)
         self.ax2.legend(loc='best', fontsize=9)
 
-        # Real-time thermal load bar plot
         self.ax3.set_title('Real-Time Thermal Load Comparison', fontsize=12, fontweight='bold')
         self.ax3.set_ylabel('Thermal Load (W)', fontsize=10)
         self.ax3.grid(True, alpha=0.3, axis='y')
 
-        # Aggregated electric load bar plot
         self.ax4.set_title('Cumulative Energy Consumption Comparison', fontsize=12, fontweight='bold')
         self.ax4.set_ylabel('Energy (kWh)', fontsize=10)
         self.ax4.grid(True, alpha=0.3, axis='y')
 
     def add_data_point(self, timestep, building_data_dict, timestep_duration_s=900):
-        """Add data point for all buildings
-
-        Parameters:
-        -----------
-        timestep : int
-            Current simulation timestep
-        building_data_dict : dict
-            Dictionary with building names as keys and data dicts as values
-        timestep_duration_s : float
-            Duration of each timestep in seconds (default 900s = 15min)
-        """
+        """Add data point for all buildings"""
         self.timesteps.append(timestep)
 
         for building_name in self.building_names:
@@ -288,7 +304,6 @@ class MultiHVACDashboard:
                 self.building_data[building_name]['thermal_load'].append(data['thermal_load'])
                 self.building_data[building_name]['power'].append(data['power'])
 
-                # Calculate cumulative energy (convert W to kWh)
                 if len(self.building_data[building_name]['cumulative_energy']) == 0:
                     cumulative = data['power'] * timestep_duration_s / 3600 / 1000
                 else:
@@ -298,19 +313,17 @@ class MultiHVACDashboard:
 
         self._update_plots()
 
-        # Save frame for GIF
         if self.save_gif:
             self._save_frame()
 
-        # Update display for interactive viewing
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
         plt.pause(0.001)
 
         if len(self.timesteps) % 20 == 0:
             total_power = sum(building_data_dict[name]['power']
-                            for name in self.building_names
-                            if name in building_data_dict)
+                              for name in self.building_names
+                              if name in building_data_dict)
             print(f"  Step {timestep}: Total Power={total_power:.1f}W")
 
     def _update_plots(self):
@@ -320,23 +333,20 @@ class MultiHVACDashboard:
         if len(x_data) < 1:
             return
 
-        # 1. Update individual temperature lines
         for building_name in self.building_names:
             temp_data = list(self.building_data[building_name]['temperature'])
             self.temp_lines[building_name].set_data(x_data, temp_data)
 
-        # 2. Update aggregated power line
         total_power = np.zeros(len(x_data))
         for building_name in self.building_names:
             power_array = np.array(list(self.building_data[building_name]['power']))
             if len(power_array) < len(x_data):
                 power_array = np.pad(power_array, (0, len(x_data) - len(power_array)),
-                                    constant_values=0)
+                                     constant_values=0)
             total_power += power_array
 
         self.power_line.set_data(x_data, total_power)
 
-        # 3. Real-time thermal load bar chart
         current_loads = [
             list(self.building_data[name]['thermal_load'])[-1]
             if len(self.building_data[name]['thermal_load']) > 0 else 0
@@ -345,21 +355,19 @@ class MultiHVACDashboard:
 
         self.ax3.clear()
         bars3 = self.ax3.bar(range(len(self.building_names)), current_loads,
-                            color=[self.color_map[name] for name in self.building_names],
-                            alpha=0.7, edgecolor='black', linewidth=1.5)
+                             color=[self.color_map[name] for name in self.building_names],
+                             alpha=0.7, edgecolor='black', linewidth=1.5)
         self.ax3.set_xticks(range(len(self.building_names)))
         self.ax3.set_xticklabels(self.building_names, rotation=45, ha='right', fontsize=9)
         self.ax3.set_ylabel('Thermal Load (W)', fontsize=10)
         self.ax3.set_title('Real-Time Thermal Load Comparison', fontsize=12, fontweight='bold')
         self.ax3.grid(True, alpha=0.3, axis='y')
 
-        # Add value labels on bars
         for bar, val in zip(bars3, current_loads):
             height = bar.get_height()
             self.ax3.text(bar.get_x() + bar.get_width() / 2., height,
-                         f'{val:.0f}', ha='center', va='bottom', fontsize=8)
+                          f'{val:.0f}', ha='center', va='bottom', fontsize=8)
 
-        # 4. Cumulative energy consumption bar chart
         cumulative_energies = [
             list(self.building_data[name]['cumulative_energy'])[-1]
             if len(self.building_data[name]['cumulative_energy']) > 0 else 0
@@ -368,21 +376,19 @@ class MultiHVACDashboard:
 
         self.ax4.clear()
         bars4 = self.ax4.bar(range(len(self.building_names)), cumulative_energies,
-                            color=[self.color_map[name] for name in self.building_names],
-                            alpha=0.7, edgecolor='black', linewidth=1.5)
+                             color=[self.color_map[name] for name in self.building_names],
+                             alpha=0.7, edgecolor='black', linewidth=1.5)
         self.ax4.set_xticks(range(len(self.building_names)))
         self.ax4.set_xticklabels(self.building_names, rotation=45, ha='right', fontsize=9)
         self.ax4.set_ylabel('Energy (kWh)', fontsize=10)
         self.ax4.set_title('Cumulative Energy Consumption Comparison', fontsize=12, fontweight='bold')
         self.ax4.grid(True, alpha=0.3, axis='y')
 
-        # Add value labels on bars
         for bar, val in zip(bars4, cumulative_energies):
             height = bar.get_height()
             self.ax4.text(bar.get_x() + bar.get_width() / 2., height,
-                         f'{val:.2f}', ha='center', va='bottom', fontsize=8)
+                          f'{val:.2f}', ha='center', va='bottom', fontsize=8)
 
-        # Simple autoscaling for line plots
         if len(x_data) > 1:
             xmin, xmax = min(x_data), max(x_data)
             self.ax1.set_xlim(xmin, xmax)
@@ -427,7 +433,8 @@ class MultiHVACDashboard:
                 temps = list(self.building_data[building_name]['temperature'])
                 powers = list(self.building_data[building_name]['power'])
                 loads = list(self.building_data[building_name]['thermal_load'])
-                energy = list(self.building_data[building_name]['cumulative_energy'])[-1] if self.building_data[building_name]['cumulative_energy'] else 0
+                energy = list(self.building_data[building_name]['cumulative_energy'])[-1] if \
+                self.building_data[building_name]['cumulative_energy'] else 0
                 total_energy_all += energy
 
                 print(f"  {building_name}: Avg Temp={np.mean(temps):.1f}°C, "
@@ -442,33 +449,13 @@ class MultiHVACDashboard:
         plt.close(self.fig)
 
 
-# ==============================================================================
-# FACTORY FUNCTIONS
-# ==============================================================================
 def create_hvac_dashboard(max_points=200, window_title="HVAC System Monitor"):
     """Create a single building HVAC dashboard"""
     return HVACDashboard(max_points=max_points, window_title=window_title)
 
 
 def create_multi_dashboard(building_names, max_points=200, save_gif=True,
-                          gif_filename="hvac_animation.gif"):
-    """
-    Create a multi-building dashboard with GIF export
-
-    Parameters:
-    -----------
-    building_names : list
-        List of building names to monitor
-    max_points : int
-        Maximum number of data points to display
-    save_gif : bool
-        Whether to save frames for GIF animation
-    gif_filename : str
-        Output filename for the GIF
-
-    Returns:
-    --------
-    MultiHVACDashboard instance
-    """
+                           gif_filename="hvac_animation.gif"):
+    """Create a multi-building dashboard with GIF export"""
     return MultiHVACDashboard(building_names=building_names, max_points=max_points,
-                             save_gif=save_gif, gif_filename=gif_filename)
+                              save_gif=save_gif, gif_filename=gif_filename)

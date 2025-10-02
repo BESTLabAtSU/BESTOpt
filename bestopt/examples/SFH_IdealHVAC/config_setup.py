@@ -35,6 +35,7 @@ cm.add_building_component(
         "historical_data_path": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv"),
         "encoder_length": 48,
         "retrain": "Off",
+        "simulation_start_time": "2023-08-01 00:00:00",
     },
     class_path="bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
 )
