@@ -25,6 +25,13 @@ class HVACMode(Enum):
     VENTILATION = "ventilation"
     AUTO = "auto"
 
+class PowerFlowPriority(Enum):
+    """Priority modes for power flow management"""
+    COST_MINIMIZATION = "cost_min"
+    SELF_CONSUMPTION = "self_consumption"
+    PEAK_SHAVING = "peak_shaving"
+    BACKUP_PRIORITY = "backup_priority"
+
 
 class BatteryMode(Enum):
     """Battery operation modes."""
@@ -340,7 +347,18 @@ class ThermalAction:
 @dataclass
 class ElectricalAction:
     """Electrical control actions."""
-    pass
+    pv2building: float = 0.0
+    pv2battery: float = 0.0
+    pv2ev: float = 0.0
+    pv2grid: float = 0.0
+    battery2building: float = 0.0
+    battery2ev: float = 0.0
+    battery2grid: float = 0.0
+    ev2building: float = 0.0
+    ev2grid: float = 0.0
+    grid2building: float = 0.0
+    grid2battery: float = 0.0
+    grid2ev: float = 0.0
     # @TODO Battery control
     # @TODO PV control
     # @TODO EV control
@@ -399,6 +417,7 @@ class OccupancyData:
     occupancy_count: int = 0
     step_of_day: int = 0
     occupancy_fraction: float = 0.0  # 0-1
+    _is_ev_connected: float = 0.0   # EV status 0-1
     comfort_temp_min: float = 20.0  # °C
     comfort_temp_max: float = 26.0  # °C
     # @TODO add behavior variables later
