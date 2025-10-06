@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from bestopt.env.modules.hvac.local_controller.fan_local_controller import FanLocalController
 from bestopt.env.core.data_structure import ThermalAction, HVACLocalAction
 
-fan_local_controller = FanLocalController({}, name="fan_local_controller")
+fan_local_controller = FanLocalController({"ctrl_type": "staged", "rated_flow_m3s": 2.0}, name="fan_local_controller")
 fan_local_controller.initialize()
 
 
-ip_act = ThermalAction(supervisory_supply_air_flow_rate=1.0)
+ip_act = ThermalAction(supervisory_supply_air_flow_rate=0.6)
 
 op_act = fan_local_controller.step(action=ip_act, timestep=900)
 
