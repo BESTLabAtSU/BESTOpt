@@ -8,7 +8,7 @@ PROJECT_ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(PROJECT_ROOT_PATH))
 config_path = os.path.join(PROJECT_ROOT_PATH, "examples", "SFH_1_Building", "config_setup.json")
 
-cm = ConfigurationManager(str(config_path))
+cm = ConfigurationManager(config_path)
 env = BESTOptEnvironment(cm.config)
 
 # Create the enhanced HVAC dashboard
