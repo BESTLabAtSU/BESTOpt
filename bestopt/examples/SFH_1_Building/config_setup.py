@@ -65,10 +65,14 @@ cm.add_building_component(
 )
 
 cm.add_building_component(
-    "SFH_1", "der_systems", "pv_bat",
+    "SFH_1", "der_systems", "pv_bat_ev",
     parameters={
-        "system_config": {"pv": {"rated_capacity_kW": 2},
-                          "bat": {"rated_capacity_kWh": 5}},
+        "system_config": {"pv":  {"rated_capacity_kW": 2},
+                          "bat": {"rated_capacity_kWh": 5,
+                                  "initial_soc": 0.3, },
+                          "ev":  {"rated_capacity_kWh": 5,
+                                  "initial_soc": 0.3, },
+                          },
     },
     class_path="bestopt.env.modules.ders.system.der.DERModule"
 )
@@ -84,6 +88,24 @@ cm.add_controller(
                 "hours": 0}
     },
     class_path="bestopt.env.controllers.thermal.SupervisoryController"
+)
+
+cm.add_controller(
+    "SFH_1_ELECTRIC_Supervisory",
+    parameters={
+        "domain": "electrical",
+        "type": "rule-based",
+        "mode": "self_consumption",
+        # supervisory controller need to know the system info
+        # @ TODO need to reduce the redundancy later
+        "system_config": {"pv":  {"rated_capacity_kW": 2},
+                          "bat": {"rated_capacity_kWh": 5,
+                                  "initial_soc": 0.3, },
+                          "ev":  {"rated_capacity_kWh": 5,
+                                  "initial_soc": 0.3, },
+                          }
+    },
+    class_path="bestopt.env.controllers.electrical.SupervisoryController"
 )
 
 cm.add_disturbance(
@@ -123,6 +145,7 @@ cm.add_environment(
 
 cm.select_buildings(["SFH_1"])
 cm.select_controller_for_building_domain("SFH_1", "thermal", "SFH_1_THERMAL_Supervisory")
+cm.select_controller_for_building_domain("SFH_1", "electrical", "SFH_1_ELECTRIC_Supervisory")
 cm.select_disturbances(["weather", "occupancy", "price"])
 cm.select_environment()
 

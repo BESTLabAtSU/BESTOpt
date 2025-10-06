@@ -122,8 +122,7 @@ class BESTOptEnvironment:
         thermal_modules_to_warmup = []
         for building_id, building_info in buildings_config.items():
             # Process each component type in the building
-            for component_type in ['batteries', 'pv_systems', 'hvac_systems',
-                                   'thermal_zones']:  # TODO need to be adaptive
+            for component_type in ['der_systems', 'hvac_systems', 'thermal_zones']:  # TODO need to be adaptive
                 components = building_info.get(component_type, {})
                 for component_id, component_config in components.items():
                     instance = self._create_instance(
@@ -263,30 +262,33 @@ class BESTOptEnvironment:
 
     def _initialize_component_states(self) -> None:
         """Initialize state objects for all created modules."""
+        # @TODO the current version grab init state from config,
+        # but I feel when we instance the module we already call the init function
+        # so here, we can use the simple get state function to initialize component states
+        # need to update later
         buildings_config = self.config.get('buildings', {})
 
         for building_id, building_info in buildings_config.items():
             state = self.states[building_id]
 
             # Initialize electrical component states
-            for component_type in ['batteries', 'pv_systems', 'bldg_e_loads']:
+            for component_type in ['der_systems']:
                 components = building_info.get(component_type, {})
                 for component_id, component_config in components.items():
-                    if component_type == 'batteries':
-                        # Create battery state from config
-                        battery_config = component_config.get('parameters', {})
-                        initial_soc = battery_config.get('initial_soc', 0.5)
+                    system_config = component_config.get('parameters').get('system_config')
+                    battery_config = system_config.get('bat')
+                    ev_config = system_config.get('ev')
+                    # @NOTE only module with state variable need to be initialized
+                    if battery_config is not None:
                         state.electrical.batteries[component_id] = BatteryState(
                             component_id=component_id,
-                            battery_soc=initial_soc
+                            battery_soc=battery_config.get('initial_soc', 0.5)
                         )
-                    elif component_type == 'pv_systems':
-                        state.electrical.pv_systems[component_id] = PVState(
-                            component_id=component_id
-                        )
-                    elif component_type == 'bldg_e_loads':
-                        state.electrical.bldg_e_loads[component_id] = BLDGEState(
-                            component_id=component_id
+
+                    if ev_config is not None:
+                        state.electrical.evs[component_id] = EVState(
+                            component_id=component_id,
+                            ev_soc=ev_config.get('initial_soc', 0.5)
                         )
 
             # Initialize thermal component states

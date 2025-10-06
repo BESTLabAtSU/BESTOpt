@@ -7,8 +7,8 @@ from typing import Dict, Any, Optional, Tuple
 from enum import Enum
 import logging
 
-from ...core.base import BaseModule
-from ...core.data_structure import State, Action, Disturbance, EVMode
+from bestopt.env.core.base import BaseModule
+from bestopt.env.core.data_structure import State, Action, Disturbance
 
 
 class EVModule(BaseModule):
