@@ -12,7 +12,7 @@ import logging
 from modnn.Config import _args  # Using version 3.0.7
 from modnn.utils import Mod
 from ...core.base import BaseModule
-from ...core.data_structure import State, Action, Disturbance, BLDGTState
+from ...core.data_structure import ThermalZoneComponentState, DomainAction, Disturbance, BuildingSystemState
 import os
 
 class ThermalDynamicsModule(BaseModule):
@@ -269,7 +269,7 @@ class ThermalDynamicsModule(BaseModule):
         """Update the history buffer with current timestep data."""
         self.history_buffer.append(current_data.copy())
 
-    def step(self, state: State, action: Action,
+    def step(self, state: ThermalZoneComponentState, action: Any,
              disturbance: Disturbance, timestep: int) -> Dict[str, Any]:
         """
         Execute one simulation step for thermal dynamics.
@@ -292,8 +292,8 @@ class ThermalDynamicsModule(BaseModule):
             self.current_timestep = timestep
 
             # Extract inputs from disturbance and action
-            outdoor_temp = disturbance.weather.outdoor_dry_bulbtemperature
-            solar_radiation = disturbance.weather.solar_radiation
+            outdoor_temp = disturbance.weather.outdoor_dry_bulb_temp
+            solar_radiation = disturbance.weather.solar_radiation_w_m2
             occupancy = disturbance.occupancy.occupancy_fraction
             hvac_thermal_load = action.hvac_thermal_load
 
@@ -372,12 +372,13 @@ class ThermalDynamicsModule(BaseModule):
         if self.history_buffer and self.is_prepared:
             latest_data = self.history_buffer[-1]
             return {
-                'current_timestep': self.current_timestep,
+                'timestep': self.current_timestep,
                 'encoder_length': self.encoder_length,
                 'buffer_size': len(self.history_buffer),
-                'latest_room_temp': latest_data.get('temp_room', 0),
-                'latest_ambient_temp': latest_data.get('temp_amb', 0),
-                'latest_hvac_thermal_load': latest_data.get('phvac', 0),
+                'current_step_room_temp': self.initial_temp,
+                'last_step_room_temp': latest_data.get('temp_room', 0),
+                'last_step_ambient_temp': latest_data.get('temp_amb', 0),
+                'last_step_hvac_thermal_load': latest_data.get('phvac', 0),
                 'zone_id': self.zone_id,
                 'is_prepared': self.is_prepared
             }

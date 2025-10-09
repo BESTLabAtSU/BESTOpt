@@ -5,8 +5,8 @@
 import numpy as np
 from typing import Dict, Any, Optional
 from ..core.base import BaseModule
-from ..core.data_structure import State, Action, Disturbance, Observation, ThermalAction, HVACMode
-
+from ..core.data_structure import Disturbance, HVACSystemAction, HVACMode, SystemType
+from bestopt.env.core.constants import AIR_DENSITY, AIR_SPECIFIC_HEAT
 
 class SupervisoryController(BaseModule):
     """
@@ -48,7 +48,7 @@ class SupervisoryController(BaseModule):
         self.logger.info(f"Initialized thermal controller: {self.name}")
 
     def step(self, state: Any, observation: Any, disturbance: Disturbance,
-             timestep: float) -> ThermalAction:
+             timestep: float) -> HVACSystemAction:
         """
         Determine thermal control action based on current conditions.
 
@@ -62,17 +62,20 @@ class SupervisoryController(BaseModule):
             ThermalAction with control commands
         """
         try:
-            # Extract temperature from state
-            # Handle both domain state and building state
-            if hasattr(state, 'thermal_zones') and state.thermal_zones:
-                # Get temperature from first thermal zone
-                zone_id = list(state.thermal_zones.keys())[0]
-                current_temp = state.thermal_zones[zone_id].temperature
-            elif hasattr(state, 'temperature'):
-                current_temp = state.temperature
-            else:
-                self.logger.warning("Could not extract temperature from state")
-                current_temp = 22.0  # Default
+            current_temp = 22.0  # Default
+
+            if observation and hasattr(observation, 'thermal'):
+                thermal_obs = observation.thermal
+                if hasattr(thermal_obs, 'aggregated_metrics'):
+                    zone_temps = thermal_obs.aggregated_metrics.get('zone_temperatures', {})
+
+                    if zone_temps:
+                        temp_values = list(zone_temps.values())
+                        current_temp = sum(temp_values) / len(temp_values)
+                        self.logger.debug(f"Zone temperatures: {zone_temps}")
+                        self.logger.debug(f"Using average temperature: {current_temp:.2f}°C")
+                    else:
+                        self.logger.warning("No zone temperatures in observation")
 
             # Determine active setpoints based on occupancy
             cooling_setpoint, heating_setpoint = self._get_active_setpoints(disturbance, self.precool_config)
@@ -88,11 +91,19 @@ class SupervisoryController(BaseModule):
             self.current_supply_air_temperature = supply_air_temperature
 
             # Create thermal action
-            thermal_action = ThermalAction()
-            thermal_action.supervisory_supply_air_flow_rate = supply_air_flow_rate
-            thermal_action.supervisory_supply_air_temperature = supply_air_temperature
-            thermal_action.supervisory_cooling_setpoint = cooling_setpoint
-            thermal_action.supervisory_heating_setpoint = heating_setpoint
+            thermal_action = HVACSystemAction(
+                system_id=state.system_id,
+                system_type=SystemType.HVAC.value
+            )
+
+            thermal_action.supply_airflow_setpoint_m3s = supply_air_flow_rate
+            thermal_action.supply_temp_setpoint_c = supply_air_temperature
+            thermal_action.cooling_setpoint_c = cooling_setpoint
+            thermal_action.heating_setpoint_c = heating_setpoint
+
+            thermal_action.hvac_thermal_load_demand = (AIR_DENSITY * thermal_action.supply_airflow_setpoint_m3s *
+                                                       AIR_SPECIFIC_HEAT * (
+                                                                   thermal_action.supply_temp_setpoint_c - current_temp))
             #@ TODO update the following function
             # thermal_action.hvac_mode = self._determine_hvac_mode(hvac_power)
 
@@ -101,7 +112,10 @@ class SupervisoryController(BaseModule):
         except Exception as e:
             self.logger.error(f"Error in thermal controller step: {e}")
             # Return safe default action
-            return ThermalAction(thermal_load=0.0)
+            return HVACSystemAction(
+                system_id=state.system_id,
+                system_type=SystemType.HVAC.value
+            )
 
     def _get_active_setpoints(self, disturbance, precool_config) -> tuple:
         """Determine active setpoints based on occupancy and schedule."""

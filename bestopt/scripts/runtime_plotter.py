@@ -1,5 +1,5 @@
 import matplotlib
-# matplotlib.use("QtAgg")  # Uncomment for interactive display
+matplotlib.use("QtAgg")  # Uncomment for interactive display
 import matplotlib.pyplot as plt
 import numpy as np
 from collections import deque
