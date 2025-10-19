@@ -45,7 +45,7 @@ class CoilModule(BaseModule):
         super().__init__(config, name)
 
         # --- Effectiveness and properties (defaults OK for quick testing) ---
-        self.effectiveness: float = float(config.get("effectiveness", 0.7))
+        self.effectiveness: float = float(config.get("effectiveness", 0.8))
         self.effectiveness = max(0.0, min(1.0, self.effectiveness))
 
         # Air properties (approx. near 20–25°C)
