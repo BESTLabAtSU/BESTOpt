@@ -1,23 +1,38 @@
 """
-Configuration file for a single family house
+Configuration setup for Single Family House
 """
 
 import logging
-from bestopt.env.core.config_manager import ConfigurationManager
 import os
+from bestopt.env.core.config_manager import ConfigurationManager
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+
 PROJECT_ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(PROJECT_ROOT_PATH))
 
-# @TODO some dataframes are used for multiple modules, need to clean up later
+# Initialize configuration manager
 cm = ConfigurationManager()
 logging.info("Started a fresh, empty configuration.")
 
-cm.add_building_component(
-    "SFH_1", "thermal_zones", "zone0",
+
+cm.add_cluster("residential_cluster_1", parameters={"location": "Syracuse, NY"})
+cm.add_building(
+    cluster_id="residential_cluster_1",
+    building_id="SFH_1",
+    parameters={
+        "building_type": "single_family_home",
+    },
+    thermal_zones=["zone0"]  # Single zone for now
+)
+
+# Add thermal zone to building
+cm.add_thermal_zone_module(
+    building_id="SFH_1",
+    zone_id="zone0",
     parameters={
         "model_args": {
             "para": {"Int_h": 8, "Ext_h": 14, "epochs": 20},
@@ -38,27 +53,44 @@ cm.add_building_component(
         "retrain": "Off",
         "simulation_start_time": "2023-08-01 00:00:00",
     },
-    class_path="bestopt.env.modules.building.dynamic.ThermalDynamicsModule"
+    class_path="bestopt.env.modules.building.thermal.ThermalDynamicsModule"
 )
-# @TODO need to use standardized system name, for example,
-# if one system is fan-coil-chiller, another is fan-coil-chiller-tower, or fan-coil-heatpump
-# the system package need to have separate name for that
-# I will use same logic for DERs
-# or just call hvac system and it can be structured dynamically
-cm.add_building_component(
-    "SFH_1", "hvac_systems", "fcu",
+
+# cm.add_electrical_zone_module(
+#     building_id="SFH_1",
+#     zone_id="zone0",
+#     parameters={
+#         "lighting": {"daytime": 600,
+#                      "nighttime": 1800},
+#         "appliance": {"cooking": 2000,
+#                       "tv": 200,
+#                       "pc": 400,
+#                       "dishwashing": 1000
+#                       },
+#     },
+#     class_path="bestopt.env.modules.building.electrical.ElectricalDynamicModule"
+# )
+
+# HVAC System (Thermal Domain)
+cm.add_system(
+    cluster_id="residential_cluster_1",
+    system_id="hvac_system_1",
+    system_type="hvac_systems",
     parameters={
-        "fan": {"rated_flow_m3s": 1, "rated_power_W": 1*1000},
-        "fan_ctrl": {"ctrl_type": "linear"},
-        "coil": {"epsilon": 0.8},
-        "pump": {"rated_flow_m3s": 0.005, "rated_power_W": 0.005*100_000},
-        "chiller": {"rated_capacity_W": 3500, "rated_cop": 4.5},
-        "tower": {
-            "rated_capacity_W": 3500,
-            "rated_fan_power_W": 2000,
-            "pump_power_per_flow": 1800,
-            "min_approach_C": 3.0,
-            "max_approach_C": 7.0
+        "system_name": "FCU System",
+        "system_config": {
+            "fan": {"rated_flow_m3s": 1, "rated_power_W": 1000},
+            "fan_ctrl": {"ctrl_type": "linear"},
+            "coil": {"epsilon": 0.8},
+            "pump": {"rated_flow_m3s": 0.005, "rated_power_W": 500},
+            "chiller": {"rated_capacity_W": 3500, "rated_cop": 4.5},
+            "tower": {
+                "rated_capacity_W": 3500,
+                "rated_fan_power_W": 2000,
+                "pump_power_per_flow": 1800,
+                "min_approach_C": 3.0,
+                "max_approach_C": 7.0
+            }
         }
     },
     class_path="bestopt.env.modules.hvac.system.FCU.FCUModule"
@@ -77,15 +109,33 @@ cm.add_building_component(
     class_path="bestopt.env.modules.ders.system.der.DERModule"
 )
 
-cm.add_controller(
-    "SFH_1_THERMAL_Supervisory",
+# Water System (placeholder for future)
+# cm.add_system(
+#     cluster_id="residential_cluster_1",
+#     system_id="water_system_1",
+#     system_type="water_systems",
+#     parameters={"system_name": "Water Heater System"},
+#     class_path="bestopt.env.modules.water.system.WaterModule"
+# )
+
+# Assign Systems to Buildings
+cm.assign_system_to_buildings("hvac_system_1", ["SFH_1"])
+# cm.assign_system_to_buildings("der_system_1", ["SFH_1"])
+
+# HVAC System Controller (Thermal)
+cm.add_system_controller(
+    controller_id="hvac_controller_1",
+    system_id="hvac_system_1",
     parameters={
         "domain": "thermal",
         "type": "rule-based",
         "mode": "cooling",
-        "precooling": {
-                "degree": 0,
-                "hours": 0}
+        "precooling": {"degree": 0, "hours": 0},
+        "base_cooling": 24.0,
+        "base_heating": 18.0,
+        "deadband": 0.5,
+        "cooling_power_max": 4000.0,
+        "heating_power_max": 4000.0
     },
     class_path="bestopt.env.controllers.thermal.SupervisoryController"
 )
@@ -134,15 +184,18 @@ cm.add_disturbance(
 
 cm.add_environment(
     parameters={
-        "resolution": 900,
-        "duration": 86400*3,
+        "resolution": 900,  # 15 minutes
+        "duration": 86400 * 3,  # 3 days
         "enable_history": True,
         "logging_level": "INFO",
         "simulation_start_time": "2023-08-01 00:00:00",
     },
-    class_path="bestopt.environment.BestOptEnvironment"
+    class_path="bestopt.environment.BESTOptEnvironment"
 )
 
+
+# Select cluster and its components
+cm.select_cluster("residential_cluster_1")
 cm.select_buildings(["SFH_1"])
 cm.select_controller_for_building_domain("SFH_1", "thermal", "SFH_1_THERMAL_Supervisory")
 cm.select_controller_for_building_domain("SFH_1", "electrical", "SFH_1_ELECTRIC_Supervisory")
@@ -155,6 +208,9 @@ if warnings:
 else:
     print("\n✓ Configuration validation passed")
 
+# Print summary
 cm.print_summary()
+
+# Save configuration
 cm.save_final_configuration("config_setup.json")
 print("✓ Saved simulation configuration as config_setup.json")

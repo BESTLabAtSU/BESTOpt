@@ -1,18 +1,19 @@
+"""
+Configuration Manager for Cluster-Building-System Architecture
+"""
 import json
 import copy
 import logging
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Tuple
 from pathlib import Path
 from dataclasses import is_dataclass, asdict
 
-Section = Literal["buildings", "disturbances", "controllers", "environment"]
+SystemType = Literal["hvac_systems", "der_systems", "water_systems"]
+DomainType = Literal["thermal", "electrical", "water"]
 
 
 class ConfigurationManager:
-    """Manages loading and modifying configuration from JSON."""
-
-    # Categorize into four subgroups
-    SECTION_KEYS = ("buildings", "disturbances", "controllers", "environment")
+    """Manages configuration for cluster-building-system architecture."""
 
     def __init__(self, json_file_path: Optional[str] = None):
         self.logger = logging.getLogger("ConfigurationManager")
@@ -29,32 +30,81 @@ class ConfigurationManager:
                 self.logger.info("Starting with empty configuration (no file specified)")
 
         # Selected configurations
+        self.selected_clusters: Dict[str, Dict[str, Any]] = {}
         self.selected_buildings: Dict[str, Dict[str, Any]] = {}
+        self.selected_systems: Dict[str, Dict[str, Any]] = {}
         self.selected_controllers: Dict[str, Dict[str, Any]] = {}
         self.selected_disturbances: Dict[str, Dict[str, Any]] = {}
         self.selected_environment: Dict[str, Any] = {}
-        self.selected_grid: Dict[str, Any] = {}
-        # Track active controllers per building
-        self.active_controllers: Dict[str, Dict[str, str]] = {}  # building_id -> {domain -> controller_name}
-        # Example: {"building_1": {"electrical": "mpc_elec", "thermal": "rule_thermal"}}
-        self.logger.info(f"Loaded configuration from {json_file_path}")
 
-    # Building management
-    def get_available_buildings(self) -> List[str]:
-        """Get list of available building IDs."""
-        return list(self.config.get('buildings', {}).keys())
+        # Track system-building mappings
+        self.system_building_map: Dict[str, List[str]] = {}  # system_id -> [building_ids]
+        self.building_system_map: Dict[str, Dict[str, str]] = {}  # building_id -> {domain -> system_id}
 
-    def get_building_info(self, building_id: str) -> Dict[str, Any]:
-        """Get configuration info for a specific building."""
-        return self.config.get('buildings', {}).get(building_id, {})
+    # Cluster Management
+    def add_cluster(self, cluster_id: str,
+                    *, parameters: Optional[Dict[str, Any]] = None,
+                    overwrite: bool = True) -> None:
+        """Add a cluster to the configuration."""
+        clusters = self.config.setdefault("clusters", {})
+
+        if not overwrite and cluster_id in clusters:
+            self.logger.info(f"Cluster {cluster_id} exists, skipping")
+            return
+
+        clusters[cluster_id] = {
+            "parameters": parameters or {},
+            "buildings": [],
+            "systems": []
+        }
+        self.logger.info(f"Added cluster: {cluster_id}")
+
+    def select_cluster(self, cluster_id: str) -> None:
+        """Select a cluster for simulation."""
+        if cluster_id not in self.config.get("clusters", {}):
+            self.logger.warning(f"Cluster {cluster_id} not found")
+            return
+
+        self.selected_clusters[cluster_id] = self._deep_copy_dict(
+            self.config["clusters"][cluster_id]
+        )
+        self.logger.info(f"Selected cluster: {cluster_id}")
+
+    # Building Management
+    def add_building(self, cluster_id: str, building_id: str,
+                     *, parameters: Optional[Dict[str, Any]] = None,
+                     thermal_zones: Optional[List[str]] = None,
+                     overwrite: bool = True) -> None:
+        """Add a building to a cluster."""
+        clusters = self.config.setdefault("clusters", {})
+        if cluster_id not in clusters:
+            self.logger.warning(f"Cluster {cluster_id} not found, creating it")
+            self.add_cluster(cluster_id)
+
+        buildings = self.config.setdefault("buildings", {})
+
+        if not overwrite and building_id in buildings:
+            self.logger.info(f"Building {building_id} exists, skipping")
+            return
+
+        buildings[building_id] = {
+            "cluster_id": cluster_id,
+            "parameters": parameters or {},
+            "thermal_zones": thermal_zones or ["zone0"]  # Default single zone
+        }
+
+        # Add building to cluster
+        if building_id not in clusters[cluster_id]["buildings"]:
+            clusters[cluster_id]["buildings"].append(building_id)
+
+        self.logger.info(f"Added building {building_id} to cluster {cluster_id}")
 
     def select_buildings(self, building_ids: List[str]) -> None:
-        """Select specific buildings for the simulation."""
+        """Select buildings for simulation."""
         available_buildings = self.config.get('buildings', {})
 
         for building_id in building_ids:
             if building_id in available_buildings:
-                # Deep copy to avoid modifying original config
                 self.selected_buildings[building_id] = self._deep_copy_dict(
                     available_buildings[building_id]
                 )
@@ -62,287 +112,194 @@ class ConfigurationManager:
             else:
                 self.logger.warning(f"Building '{building_id}' not found in configuration")
 
-    def select_all_buildings(self) -> None:
-        """Select all available buildings."""
-        self.select_buildings(self.get_available_buildings())
+    def add_thermal_zone_module(self, building_id: str, zone_id: str,
+                                *, parameters: Optional[Dict[str, Any]] = None,
+                                class_path: Optional[str] = None,
+                                dataclass_obj: Optional[object] = None,
+                                overwrite: bool = True) -> None:
+        """Add thermal zone module configuration for a building."""
+        zone_modules = self.config.setdefault("thermal_zone_modules", {})
+        zone_key = f"{building_id}.{zone_id}"
 
-    def deselect_building(self, building_id: str) -> None:
-        """Remove a building from selection."""
-        self.selected_buildings.pop(building_id, None)
-        if building_id in self.active_controllers:
-            for domain in list(self.active_controllers[building_id].keys()):
-                controller_key = self.active_controllers[building_id][domain]
-                self.selected_controllers.pop(controller_key, None)
-            self.active_controllers.pop(building_id, None)
-        self.logger.info(f"Deselected building: {building_id}")
-
-    # Component management
-    def get_building_components(self, building_id: str, component_type: str) -> List[str]:
-        """Get component names of specific type in a building."""
-        if building_id not in self.selected_buildings:
-            self.logger.warning(f"Building {building_id} not selected")
-            return []
-
-        building_config = self.selected_buildings[building_id]
-        components = building_config.get(component_type, {})
-        return list(components.keys()) if isinstance(components, dict) else []
-
-    def adjust_building_component_parameter(self, building_id: str, component_type: str,
-                                            component_id: str, param_name: str, value: Any) -> None:
-        """Adjust parameter for a specific component in a building."""
-        if building_id not in self.selected_buildings:
-            self.logger.warning(f"Building {building_id} not selected")
+        if not overwrite and zone_key in zone_modules:
+            self.logger.info(f"Thermal zone module {zone_key} exists, skipping")
             return
 
-        building_config = self.selected_buildings[building_id]
-
-        if component_type not in building_config:
-            self.logger.warning(f"Component type {component_type} not found in building {building_id}")
-            return
-
-        if component_id not in building_config[component_type]:
-            self.logger.warning(f"Component {component_id} not found in {building_id}.{component_type}")
-            return
-
-        # Check parameters dict exists
-        component_config = building_config[component_type][component_id]
-        component_config.setdefault('parameters', {})[param_name] = value
-
-        self.logger.info(f"Updated {building_id}.{component_type}.{component_id}.{param_name} = {value}")
-
-    def get_building_component_parameters(self, building_id: str, component_type: str,
-                                          component_id: str) -> Dict[str, Any]:
-        """Get parameters for a specific component."""
-        if building_id not in self.selected_buildings:
-            return {}
-
-        building_config = self.selected_buildings[building_id]
-        return (building_config.get(component_type, {})
-                .get(component_id, {})
-                .get('parameters', {}))
-
-    def add_building_component(self, building_id: str, component_type: str, component_id: str,
-                               *, parameters: Optional[Dict[str, Any]] = None,
-                               class_path: Optional[str] = None,
-                               dataclass_obj: Optional[object] = None,
-                               overwrite: bool = True) -> None:
-        """
-        Add a new component to a building.
-        Examples:
-        1) Add a module from a pre-defined dataclass
-        ConfigurationManager.add_entry(
-            "modules",
-            "battery",
-            dataclass_obj=BatteryConfig(),          # from dataclass
-            parameters={"battery_capacity": 25.0},  # overrides specific fields
-            overwrite=True
-        )
-
-        2) Add a brand new module config
-        ConfigurationManager.add_entry(
-            "modules",
-            "custom_module",
-            parameters={"param1": 123, "param2": "abc"},
-            overwrite=True
-        )
-        """
-
-        # Ensure building exists in config
-        buildings = self.config.setdefault("buildings", {})
-        building_config = buildings.setdefault(building_id, {})
-        components = building_config.setdefault(component_type, {})
-
-        if not overwrite and component_id in components:
-            self.logger.info(f"Component {building_id}.{component_type}.{component_id} exists, skipping")
-            return
-
-        # Merge parameters from dataclass and parameters dict
         default_params = self._dataclass_to_dict(dataclass_obj)
         merged_params = self._merge_params(default_params, parameters)
 
-        # Create entry
         entry = {"parameters": merged_params}
         if class_path:
             entry["class_path"] = class_path
 
-        components[component_id] = entry
-        self.logger.info(f"Added {building_id}.{component_type}.{component_id}")
+        zone_modules[zone_key] = entry
+        self.logger.info(f"Added thermal zone module: {zone_key}")
 
-    # Controller management
-    def get_available_controllers(self) -> List[str]:
-        """Get available controller types."""
-        return list(self.config.get('controllers', {}).keys())
+    def add_electrical_zone_module(self, building_id: str, zone_id: str,
+                                *, parameters: Optional[Dict[str, Any]] = None,
+                                class_path: Optional[str] = None,
+                                dataclass_obj: Optional[object] = None,
+                                overwrite: bool = True) -> None:
+        """Add electrical zone module configuration for a building."""
+        zone_modules = self.config.setdefault("electrical_zone_modules", {})
+        zone_key = f"{building_id}.{zone_id}"
 
-    def get_controller_info(self, controller_name: str) -> Dict[str, Any]:
-        """Get controller configuration info."""
-        return self.config.get('controllers', {}).get(controller_name, {})
-
-    def select_controller_for_building_domain(self,
-                                              building_id: str,
-                                              domain: str,  # "electrical", "thermal", "water"
-                                              controller_name: str) -> None:
-        """Assign a controller to a specific domain of a building."""
-        if building_id not in self.selected_buildings:
-            self.logger.warning(f"Building {building_id} not selected")
+        if not overwrite and zone_key in zone_modules:
+            self.logger.info(f"Electrical zone module {zone_key} exists, skipping")
             return
 
-        if controller_name not in self.config.get('controllers', {}):
-            self.logger.warning(f"Controller {controller_name} not available")
+        default_params = self._dataclass_to_dict(dataclass_obj)
+        merged_params = self._merge_params(default_params, parameters)
+
+        entry = {"parameters": merged_params}
+        if class_path:
+            entry["class_path"] = class_path
+
+        zone_modules[zone_key] = entry
+        self.logger.info(f"Added Electrical zone module: {zone_key}")
+
+    def add_water_zone_module(self, building_id: str, zone_id: str,
+                                *, parameters: Optional[Dict[str, Any]] = None,
+                                class_path: Optional[str] = None,
+                                dataclass_obj: Optional[object] = None,
+                                overwrite: bool = True) -> None:
+        pass
+
+    # System Management
+    def add_system(self, cluster_id: str, system_id: str, system_type: SystemType,
+                   *, parameters: Optional[Dict[str, Any]] = None,
+                   components: Optional[Dict[str, Dict[str, Any]]] = None,
+                   class_path: Optional[str] = None,
+                   overwrite: bool = True) -> None:
+        """Add a system to a cluster."""
+        clusters = self.config.setdefault("clusters", {})
+        if cluster_id not in clusters:
+            self.logger.warning(f"Cluster {cluster_id} not found, creating it")
+            self.add_cluster(cluster_id)
+
+        systems = self.config.setdefault("systems", {})
+
+        if not overwrite and system_id in systems:
+            self.logger.info(f"System {system_id} exists, skipping")
             return
 
-        # Initialize building's controller dict
-        if building_id not in self.active_controllers:
-            self.active_controllers[building_id] = {}
+        systems[system_id] = {
+            "cluster_id": cluster_id,
+            "system_type": system_type,
+            "parameters": parameters or {},
+            "components": components or {},
+            "class_path": class_path,
+            "supported_buildings": []  # Will be populated when assigning
+        }
 
-        # Create controller instance for this building-domain pair
-        controller_config = self._deep_copy_dict(self.config['controllers'][controller_name])
-        controller_key = f"{building_id}_{domain}_{controller_name}"
+        # Add system to cluster
+        if system_id not in clusters[cluster_id]["systems"]:
+            clusters[cluster_id]["systems"].append(system_id)
 
-        self.selected_controllers[controller_key] = controller_config
-        self.active_controllers[building_id][domain] = controller_key
+        self.logger.info(f"Added {system_type} system {system_id} to cluster {cluster_id}")
 
-        self.logger.info(f"Assigned {controller_name} to {building_id}.{domain}")
-
-    def adjust_building_controller_parameter(self,
-                                             building_id: str,
-                                             domain: str,
-                                             param_name: str,
-                                             value: Any) -> None:
-        """Adjust controller parameter for a specific building's domain.
-
-        Args:
-            building_id: ID of the building
-            domain: One of 'electrical', 'thermal', or 'water'
-            param_name: Parameter name to adjust
-            value: New parameter value
-        """
-        if building_id not in self.active_controllers:
-            self.logger.warning(f"No controllers for building {building_id}")
+    def assign_system_to_buildings(self, system_id: str, building_ids: List[str]) -> None:
+        """Assign a system to support one or more buildings."""
+        systems = self.config.get("systems", {})
+        if system_id not in systems:
+            self.logger.warning(f"System {system_id} not found")
             return
 
-        if domain not in self.active_controllers[building_id]:
-            self.logger.warning(f"No {domain} controller for building {building_id}")
-            return
+        system = systems[system_id]
+        system_type = system["system_type"]
+        domain = self._get_domain_from_system_type(system_type)
 
-        controller_key = self.active_controllers[building_id][domain]
-        if controller_key not in self.selected_controllers:
-            self.logger.warning(f"Controller {controller_key} not found")
-            return
+        for building_id in building_ids:
+            if building_id not in self.config.get("buildings", {}):
+                self.logger.warning(f"Building {building_id} not found")
+                continue
 
-        self.selected_controllers[controller_key].setdefault('parameters', {})[param_name] = value
-        self.logger.info(f"Updated {domain} controller for {building_id}: {param_name} = {value}")
+            # Update system's supported buildings
+            if building_id not in system["supported_buildings"]:
+                system["supported_buildings"].append(building_id)
 
-    def add_controller(self, controller_name: str,
-                       *, parameters: Optional[Dict[str, Any]] = None,
-                       class_path: Optional[str] = None,
-                       dataclass_obj: Optional[object] = None,
-                       overwrite: bool = True) -> None:
-        """Add a new controller type."""
+            # Track mapping
+            if system_id not in self.system_building_map:
+                self.system_building_map[system_id] = []
+            if building_id not in self.system_building_map[system_id]:
+                self.system_building_map[system_id].append(building_id)
 
+            if building_id not in self.building_system_map:
+                self.building_system_map[building_id] = {}
+            self.building_system_map[building_id][domain] = system_id
+
+            self.logger.info(f"Assigned {system_id} to support building {building_id}")
+
+    def select_systems(self, system_ids: List[str]) -> None:
+        """Select systems for simulation."""
+        available_systems = self.config.get('systems', {})
+
+        for system_id in system_ids:
+            if system_id in available_systems:
+                self.selected_systems[system_id] = self._deep_copy_dict(
+                    available_systems[system_id]
+                )
+                self.logger.info(f"Selected system: {system_id}")
+            else:
+                self.logger.warning(f"System '{system_id}' not found")
+
+    # Controller Management
+    def add_system_controller(self, controller_id: str, system_id: str,
+                              *, parameters: Optional[Dict[str, Any]] = None,
+                              class_path: Optional[str] = None,
+                              dataclass_obj: Optional[object] = None,
+                              overwrite: bool = True) -> None:
+        """Add a controller for a system."""
         controllers = self.config.setdefault("controllers", {})
 
-        if not overwrite and controller_name in controllers:
-            self.logger.info(f"Controller {controller_name} exists, skipping")
+        if not overwrite and controller_id in controllers:
+            self.logger.info(f"Controller {controller_id} exists, skipping")
             return
+
+        # Get system info
+        systems = self.config.get("systems", {})
+        if system_id not in systems:
+            self.logger.warning(f"System {system_id} not found")
+            return
+
+        system = systems[system_id]
+        domain = self._get_domain_from_system_type(system["system_type"])
 
         default_params = self._dataclass_to_dict(dataclass_obj)
         merged_params = self._merge_params(default_params, parameters)
 
-        entry = {"parameters": merged_params}
-        if class_path:
-            entry["class_path"] = class_path
+        controllers[controller_id] = {
+            "system_id": system_id,
+            "domain": domain,
+            "parameters": merged_params,
+            "class_path": class_path
+        }
 
-        controllers[controller_name] = entry
-        self.logger.info(f"Added controller {controller_name}")
+        self.logger.info(f"Added controller {controller_id} for system {system_id}")
 
-    def add_local_controller(self, component_path: str,
-                             *, parameters: Optional[Dict[str, Any]] = None,
-                             class_path: Optional[str] = None,
-                             dataclass_obj: Optional[object] = None,
-                             overwrite: bool = True) -> None:
-        """
-        Add a local controller for a specific component.
-
-        Args:
-            component_path: Full path to component (e.g., "SFH_1.hvac_systems.fan")
-            parameters: Controller parameters
-            class_path: Python class path for the local controller
-            dataclass_obj: Optional dataclass configuration
-            overwrite: Whether to overwrite existing controller
-        """
-        local_controllers = self.config.setdefault("local_controllers", {})
-
-        if not overwrite and component_path in local_controllers:
-            self.logger.info(f"Local controller for {component_path} exists, skipping")
+    def select_controller_for_system(self, system_id: str, controller_id: str) -> None:
+        """Assign a controller to a system."""
+        if system_id not in self.selected_systems:
+            self.logger.warning(f"System {system_id} not selected")
             return
 
-        default_params = self._dataclass_to_dict(dataclass_obj)
-        merged_params = self._merge_params(default_params, parameters)
-
-        entry = {"parameters": merged_params}
-        if class_path:
-            entry["class_path"] = class_path
-
-        local_controllers[component_path] = entry
-        self.logger.info(f"Added local controller for component: {component_path}")
-
-    def get_local_controllers(self) -> Dict[str, Dict[str, Any]]:
-        """Get all configured local controllers."""
-        return self.config.get('local_controllers', {})
-
-    def remove_local_controller(self, component_path: str) -> None:
-        """Remove a local controller for a component."""
-        local_controllers = self.config.get('local_controllers', {})
-        if component_path in local_controllers:
-            del local_controllers[component_path]
-            self.logger.info(f"Removed local controller for: {component_path}")
-        else:
-            self.logger.warning(f"No local controller found for: {component_path}")
-
-    def select_local_controllers(self) -> None:
-        """Select all local controllers for selected buildings."""
-        local_controllers = self.config.get('local_controllers', {})
-        self.selected_local_controllers = {}
-
-        for component_path, controller_config in local_controllers.items():
-            # Check if component belongs to a selected building
-            parts = component_path.split('.')
-            if parts[0] in self.selected_buildings:
-                self.selected_local_controllers[component_path] = self._deep_copy_dict(controller_config)
-                self.logger.info(f"Selected local controller for: {component_path}")
-
-    # Disturbances management
-    def get_available_disturbances(self) -> List[str]:
-        return list(self.config.get('disturbances', {}).keys())
-
-    def select_disturbances(self, disturbance_names: List[str]) -> None:
-        """Select system-wide disturbances."""
-        available_disturbances = self.config.get('disturbances', {})
-
-        for name in disturbance_names:
-            if name in available_disturbances:
-                self.selected_disturbances[name] = self._deep_copy_dict(
-                    available_disturbances[name]
-                )
-                self.logger.info(f"Selected disturbance: {name}")
-            else:
-                self.logger.warning(f"Disturbance '{name}' not found")
-
-    def adjust_disturbance_parameter(self, disturbance_name: str, param_name: str, value: Any) -> None:
-        if disturbance_name not in self.selected_disturbances:
-            self.logger.warning(f"Disturbance {disturbance_name} not selected")
+        if controller_id not in self.config.get('controllers', {}):
+            self.logger.warning(f"Controller {controller_id} not available")
             return
 
-        self.selected_disturbances[disturbance_name].setdefault('parameters', {})[param_name] = value
-        self.logger.info(f"Updated disturbance {disturbance_name}.{param_name} = {value}")
+        controller_config = self._deep_copy_dict(self.config['controllers'][controller_id])
+        self.selected_controllers[controller_id] = controller_config
+        self.selected_systems[system_id]['controller_id'] = controller_id
 
+        self.logger.info(f"Assigned controller {controller_id} to system {system_id}")
+
+    # Disturbances & Environment
     def add_disturbance(self, disturbance_name: str,
                         *, parameters: Optional[Dict[str, Any]] = None,
                         class_path: Optional[str] = None,
                         dataclass_obj: Optional[object] = None,
                         overwrite: bool = True) -> None:
         """Add a new disturbance."""
-
         disturbances = self.config.setdefault("disturbances", {})
 
         if not overwrite and disturbance_name in disturbances:
@@ -359,25 +316,22 @@ class ConfigurationManager:
         disturbances[disturbance_name] = entry
         self.logger.info(f"Added disturbance {disturbance_name}")
 
-    # Environment management
-    def select_environment(self) -> None:
-        env_config = self.config.get('environment', {})
-        if env_config:
-            self.selected_environment = self._deep_copy_dict(env_config)
-            self.logger.info("Environment configuration selected")
+    def select_disturbances(self, disturbance_names: List[str]) -> None:
+        """Select disturbances for simulation."""
+        available_disturbances = self.config.get('disturbances', {})
 
-    def adjust_environment_parameter(self, param_name: str, value: Any) -> None:
-        if not self.selected_environment:
-            self.logger.warning("Environment not selected")
-            return
-        self.selected_environment.setdefault('parameters', {})[param_name] = value
+        for name in disturbance_names:
+            if name in available_disturbances:
+                self.selected_disturbances[name] = self._deep_copy_dict(
+                    available_disturbances[name]
+                )
+                self.logger.info(f"Selected disturbance: {name}")
 
     def add_environment(self, *, parameters: Optional[Dict[str, Any]] = None,
                         class_path: Optional[str] = None,
                         dataclass_obj: Optional[object] = None,
                         overwrite: bool = True) -> None:
         """Add environment configuration."""
-
         if not overwrite and "environment" in self.config:
             self.logger.info("Environment exists, skipping")
             return
@@ -392,92 +346,74 @@ class ConfigurationManager:
         self.config["environment"] = entry
         self.logger.info("Added environment")
 
-    # Grid management
-    # @TODO add grid model later
-    def select_grid(self) -> None:
-        grid_config = self.config.get('grid', {})
-        if grid_config:
-            self.selected_grid = self._deep_copy_dict(grid_config)
-            self.logger.info("Grid configuration selected")
+    def select_environment(self) -> None:
+        """Select environment configuration."""
+        env_config = self.config.get('environment', {})
+        if env_config:
+            self.selected_environment = self._deep_copy_dict(env_config)
+            self.logger.info("Environment configuration selected")
 
-    def adjust_grid_parameter(self, param_name: str, value: Any) -> None:
-        if not self.selected_grid:
-            self.logger.warning("Grid not selected")
-            return
-        self.selected_grid.setdefault('parameters', {})[param_name] = value
-
-    def add_grid(self, *, parameters: Optional[Dict[str, Any]] = None,
-                 class_path: Optional[str] = None,
-                 dataclass_obj: Optional[object] = None,
-                 overwrite: bool = True) -> None:
-        """Add grid configuration."""
-        if not overwrite and self.config.get("grid"):
-            self.logger.info("Grid exists, skipping")
-            return
-
-        default_params = self._dataclass_to_dict(dataclass_obj)
-        merged_params = self._merge_params(default_params, parameters)
-
-        entry = {"parameters": merged_params}
-        if class_path:
-            entry["class_path"] = class_path
-
-        self.config["grid"] = entry
-        self.logger.info(f"Added grid with {len(merged_params)} parameters")
-
-    # Configuration Generation and Validation
+    # Configuration Export
     def get_final_configuration(self) -> Dict[str, Any]:
         """Generate final configuration for the environment."""
-        self.select_local_controllers()
+        # Collect thermal zone modules for selected buildings
+        selected_thermal_zones = {}
+        thermal_zone_modules = self.config.get("thermal_zone_modules", {})
+
+        for building_id in self.selected_buildings:
+            building_config = self.selected_buildings[building_id]
+            for zone_id in building_config.get("thermal_zones", []):
+                zone_key = f"{building_id}.{zone_id}"
+                if zone_key in thermal_zone_modules:
+                    selected_thermal_zones[zone_key] = self._deep_copy_dict(
+                        thermal_zone_modules[zone_key]
+                    )
 
         return {
+            "clusters": self.selected_clusters,
             "buildings": self.selected_buildings,
+            "systems": self.selected_systems,
             "controllers": self.selected_controllers,
-            "active_controllers": self.active_controllers,
-            "local_controllers": self.selected_local_controllers,  # Add this line
+            "thermal_zone_modules": selected_thermal_zones,
+            "system_building_map": self.system_building_map,
+            "building_system_map": self.building_system_map,
             "disturbances": self.selected_disturbances,
-            "environment": self.selected_environment,
-            "grid": self.selected_grid
+            "environment": self.selected_environment
         }
 
     def validate_configuration(self) -> List[str]:
-        """Validate the current configuration and return warnings."""
+        """Validate the current configuration."""
         warnings = []
+
+        # Check clusters
+        if not self.selected_clusters:
+            warnings.append("No clusters selected")
 
         # Check buildings
         if not self.selected_buildings:
             warnings.append("No buildings selected")
 
-        # Check that each building has required components and controllers
-        for building_id, building_config in self.selected_buildings.items():
+        # Check systems
+        if not self.selected_systems:
+            warnings.append("No systems selected")
 
-            # Check for domain controllers
-            if building_id not in self.active_controllers:
-                warnings.append(f"Building {building_id} has no assigned controllers")
+        # Check that each building has necessary systems
+        for building_id in self.selected_buildings:
+            if building_id not in self.building_system_map:
+                warnings.append(f"Building {building_id} has no assigned systems")
             else:
-                building_controllers = self.active_controllers[building_id]
+                assigned_domains = set(self.building_system_map[building_id].keys())
+                required_domains = {"thermal", "electrical"}  # water is optional
+                missing_domains = required_domains - assigned_domains
+                for domain in missing_domains:
+                    warnings.append(f"Building {building_id} missing {domain} system")
 
-                # Check each required domain has a controller
-                required_domains = []  # TODO Add required domains like ['electrical', 'thermal']
-                for domain in required_domains:
-                    if domain not in building_controllers:
-                        warnings.append(f"Building {building_id} missing {domain} controller")
+        # Check that each system has a controller
+        for system_id, system_config in self.selected_systems.items():
+            if 'controller_id' not in system_config:
+                warnings.append(f"System {system_id} has no assigned controller")
 
-                # Warn if NO controllers at all
-                if not building_controllers:
-                    warnings.append(f"Building {building_id} has controller mapping but no domains assigned")
-
-            # Check component configurations
-            for component_type in ['batteries', 'pv_systems', 'hvac_systems']:
-                components = building_config.get(component_type, {})
-                for comp_id, comp_config in components.items():
-                    if 'class_path' not in comp_config:
-                        warnings.append(f"Component {building_id}.{component_type}.{comp_id} missing class_path")
-
-        # Check global components
-        if not self.selected_disturbances:
-            warnings.append("No disturbances selected")
-
+        # Check environment
         if not self.selected_environment:
             warnings.append("Environment not selected")
 
@@ -485,69 +421,53 @@ class ConfigurationManager:
 
     def print_summary(self) -> None:
         """Print configuration summary."""
+        print(f"\n{'=' * 50}")
+        print("Configuration Summary")
+        print(f"{'=' * 50}")
+
+        # Clusters
+        print(f"\nClusters ({len(self.selected_clusters)}):")
+        for cluster_id in self.selected_clusters:
+            print(f"  - {cluster_id}")
+
         # Buildings
-        print(f"\nSelected Buildings ({len(self.selected_buildings)}):")
+        print(f"\nBuildings ({len(self.selected_buildings)}):")
         for building_id, building_config in self.selected_buildings.items():
-            print(f"\n  Building: {building_id}")
+            cluster_id = building_config.get("cluster_id", "unknown")
+            zones = building_config.get("thermal_zones", [])
+            print(f"  - {building_id} (cluster: {cluster_id}, zones: {zones})")
 
-            # Show domain controllers
-            if building_id in self.active_controllers:
-                building_controllers = self.active_controllers[building_id]
-                if building_controllers:
-                    print(f"    Controllers:")
-                    for domain, controller_key in building_controllers.items():
-                        # Extract controller name from key (format: building_domain_name)
-                        controller_name = controller_key.replace(f"{building_id}_{domain}_", "")
-                        print(f"      - {domain}: {controller_name}")
-                else:
-                    print(f"    Controllers: None assigned")
-            else:
-                print(f"    Controllers: None assigned")
+            # Show assigned systems
+            if building_id in self.building_system_map:
+                for domain, system_id in self.building_system_map[building_id].items():
+                    print(f"    └─ {domain}: {system_id}")
 
-            # Show components
-            for component_type in ['batteries', 'pv_systems', 'hvac_systems', 'thermal_zones']:
-                components = building_config.get(component_type, {})
-                if components:
-                    print(f"    {component_type}: {list(components.keys())}")
+        # Systems
+        print(f"\nSystems ({len(self.selected_systems)}):")
+        for system_id, system_config in self.selected_systems.items():
+            system_type = system_config.get("system_type")
+            supported = system_config.get("supported_buildings", [])
+            controller_id = system_config.get("controller_id", "none")
+            print(f"  - {system_id} ({system_type})")
+            print(f"    ├─ Controller: {controller_id}")
+            print(f"    └─ Supporting: {supported}")
 
-                    # Check for local controllers
-                    for component_id in components.keys():
-                        component_path = f"{building_id}.{component_type}.{component_id}"
-                        if hasattr(self,
-                                   'selected_local_controllers') and component_path in self.selected_local_controllers:
-                            print(f"      └─ {component_id} has local controller")
-
-        # Global components
+        # Disturbances
         print(f"\nDisturbances: {list(self.selected_disturbances.keys())}")
+
+        # Environment
         print(f"Environment: {'Selected' if self.selected_environment else 'Not selected'}")
-        print(f"Grid: {'Selected' if self.selected_grid else 'Not selected'}")
 
-        # Local Controllers
-        if hasattr(self, 'selected_local_controllers') and self.selected_local_controllers:
-            print(f"\nLocal Controllers ({len(self.selected_local_controllers)}):")
-            for path in self.selected_local_controllers.keys():
-                print(f"  - {path}")
-
-        # Validation warnings
+        # Validation
         warnings = self.validate_configuration()
         if warnings:
             print(f"\n⚠ Warnings ({len(warnings)}):")
             for warning in warnings:
                 print(f"  - {warning}")
+        else:
+            print("\n✓ Configuration validation passed")
 
-    # Helper functions
-    def _load_json(self) -> Dict[str, Any]:
-        """Load configuration from JSON file."""
-        with open(self.config_path, 'r') as f:
-            loaded_config = json.load(f)
-
-        # Ensure all required sections exist
-        empty_config = self._create_empty_config()
-        for section in empty_config:
-            if section not in loaded_config:
-                loaded_config[section] = empty_config[section]
-
-        return loaded_config
+        print(f"{'=' * 50}\n")
 
     def save_final_configuration(self, filepath: str) -> None:
         """Save final configuration to JSON file."""
@@ -556,29 +476,32 @@ class ConfigurationManager:
             json.dump(final_config, f, indent=2)
         self.logger.info(f"Saved configuration to {filepath}")
 
-    def save_configuration(self, filepath: Optional[str] = None) -> None:
-        """Save current configuration to JSON file. Use when creat JSON template"""
-        if filepath:
-            save_path = Path(filepath)
-        elif self.config_path:
-            save_path = self.config_path
-        else:
-            raise ValueError("No filepath specified and no original config path available")
+    # Helper Methods
+    def _get_domain_from_system_type(self, system_type: SystemType) -> DomainType:
+        """Map system type to domain."""
+        mapping = {
+            "hvac_systems": "thermal",
+            "der_systems": "electrical",
+            "water_systems": "water"
+        }
+        return mapping.get(system_type, "unknown")
 
-        # Save the base configuration (not selected configuration)
-        with open(save_path, 'w') as f:
-            json.dump(self.config, f, indent=2)
-        self.logger.info(f"Saved configuration to {save_path}")
+    def _load_json(self) -> Dict[str, Any]:
+        """Load configuration from JSON file."""
+        with open(self.config_path, 'r') as f:
+            return json.load(f)
 
-    def load_saved_configuration(self, filepath: str) -> None:
-        with open(filepath, 'r') as f:
-            saved_config = json.load(f)
-        self.selected_buildings = saved_config.get('buildings', {})
-        self.selected_disturbances = saved_config.get('disturbances', {})
-        self.selected_controllers = saved_config.get('controllers', {})
-        self.active_controllers = saved_config.get('controllers', {}).get('_active', None)
-        self.selected_environment = saved_config.get('environment', {})
-        self.logger.info(f"Loaded saved configuration from {filepath}")
+    def _create_empty_config(self) -> Dict[str, Any]:
+        """Create an empty configuration structure."""
+        return {
+            "clusters": {},
+            "buildings": {},
+            "systems": {},
+            "controllers": {},
+            "thermal_zone_modules": {},
+            "disturbances": {},
+            "environment": {}
+        }
 
     @staticmethod
     def _deep_copy_dict(d: Dict[str, Any]) -> Dict[str, Any]:
@@ -586,50 +509,15 @@ class ConfigurationManager:
         return copy.deepcopy(d)
 
     @staticmethod
-    def _create_empty_config() -> Dict[str, Any]:
-        """Create an empty configuration structure."""
-        return {
-            "buildings": {},
-            "controllers": {},
-            "disturbances": {},
-            "environment": {},
-            "grid": {}
-        }
-
-    def get_component_count_by_type(self, component_type: str) -> Dict[str, int]:
-        """Get count of components by type across all buildings."""
-        counts = {}
-        for building_id, building_config in self.selected_buildings.items():
-            components = building_config.get(component_type, {})
-            counts[building_id] = len(components) if isinstance(components, dict) else 0
-        return counts
-
-    def get_total_component_count(self, component_type: str) -> int:
-        """Get total count of a component type across all buildings."""
-        return sum(self.get_component_count_by_type(component_type).values())
-
-    @staticmethod
     def _merge_params(base: Dict[str, Any], override: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge parameters with overrides."""
         result = dict(base or {})
         if override:
             result.update(override)
         return result
 
-    def _section_dict(self, section: Section) -> Dict[str, Any]:
-        return self.config.setdefault(section, {})
-
-    def _entry_dict(self, section: Section, name: Optional[str] = None) -> Dict[str, Any]:
-        sd = self._section_dict(section)
-        if section in ("modules", "disturbances", "controllers"):
-            if name is None:
-                raise ValueError(f"name must be provided for section '{section}'")
-            return sd.setdefault(name, {})
-        elif section == "environment":
-            return sd
-        else:
-            raise ValueError(f"Unknown section: {section}")
-
     def _dataclass_to_dict(self, dataclass_obj: Optional[object]) -> Dict[str, Any]:
+        """Convert dataclass to dictionary."""
         if dataclass_obj is None:
             return {}
         try:
@@ -639,4 +527,3 @@ class ConfigurationManager:
         except Exception as e:
             self.logger.warning(f"Failed to read dataclass: {e}")
         return {}
-

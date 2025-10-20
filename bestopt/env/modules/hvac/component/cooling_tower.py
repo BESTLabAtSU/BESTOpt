@@ -7,10 +7,10 @@ import numpy as np
 
 from bestopt.env.core.base import BaseModule
 from bestopt.env.core.data_structure import (
-    ThermalAction,
-    CoolingTowerState,
-    ChillerState,
-    WeatherData
+    CoolingTowerComponentAction,
+    CoolingTowerComponentState,
+    ChillerComponentState,
+    WeatherDisturbance
 )
 
 
@@ -88,17 +88,17 @@ class CoolingTowerModule(BaseModule):
 
     def step(
         self,
-        state: "CoolingTowerState",
-        action: "ThermalAction",
-        chiller_state: "ChillerState",
-        weather: "WeatherData",
+        state: "CoolingTowerComponentState",
+        action: "CoolingTowerComponentAction",
+        chiller_state: "ChillerComponentState",
+        WeatherDisturbance: "WeatherDisturbance",
         timestep: float
-    ) -> Dict[str, Any]:
+    ) -> CoolingTowerComponentState:
 
         # === Inputs ===
         q_cooling_W = chiller_state.cooling_W
         cop = max(chiller_state.cop, 0.1)
-        wet_bulb_temp_c = float(getattr(weather, "outdoor_wet_bulb_temperature", 25.0))
+        wet_bulb_temp_c = float(getattr(WeatherDisturbance, "outdoor_wet_bulb_temp", 25.0))
         cw_supply_sp_c = float(getattr(action, "condenser_temp_c_sp", 30.0))
 
         # === Heat rejected ===

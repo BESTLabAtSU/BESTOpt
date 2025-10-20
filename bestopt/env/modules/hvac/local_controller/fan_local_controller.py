@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional, List
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, HVACLocalAction, Disturbance  
+from bestopt.env.core.data_structure import HVACSystemAction, FanComponentAction, FanComponentState, ComponentType
 
 
 class FanLocalController(BaseModule):

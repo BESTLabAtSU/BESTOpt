@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import PumpState, HVACLocalAction
+from bestopt.env.core.data_structure import PumpComponentState, PumpComponentAction
 
 
 class PumpModule(BaseModule):
@@ -8,7 +8,7 @@ class PumpModule(BaseModule):
     Pump module that consumes a pump water flow setpoint and updates a PumpState in place.
 
     Input (action):
-        - HVACLocalAction.pump_flowrate [m^3/s]
+        - ThermalAction.pump_flowrate [m^3/s]
 
     Output (written in-place to PumpState):
         - state.waterflow_m3s : actual water flow [m^3/s]
@@ -49,10 +49,10 @@ class PumpModule(BaseModule):
 
     def step(
         self,
-        state: PumpState,
-        action: HVACLocalAction,
+        state: PumpComponentState,
+        action: PumpComponentAction,
         timestep: float
-    ) -> Dict[str, Any]:
+    ) -> PumpComponentState:
         """
         One step (SI units):
           - Read water flow setpoint [m^3/s]
@@ -61,7 +61,7 @@ class PumpModule(BaseModule):
           - Write results in-place into PumpState
         """
         # 1) waterflow setpoint
-        sp = action.pump_flowrate
+        sp = action.flow_setpoint_m3s
         flow = 0.0 if sp is None else float(sp)
         if flow < 0.0:
             self.logger.warning(f"{self.name}: negative flow received; clamped to 0.0")

@@ -3,7 +3,7 @@ Electrical Supervisory Controller
 """
 
 import numpy as np
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 import logging
 from enum import Enum
 

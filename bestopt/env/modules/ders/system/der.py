@@ -8,8 +8,8 @@ import logging
 
 from bestopt.env.core.base import BaseModule
 from bestopt.env.core.data_structure import (
-    ElectricalAction, Disturbance, ElectricalDomainState,
-    PVState, BatteryState, EVState
+    ElectricalAction, Disturbance, DERSystemState,
+    PVState, BatteryState, EVState, BatteryMode, EVMode
 )
 from bestopt.env.modules.ders.component.pv import PVModule
 from bestopt.env.modules.ders.component.battery import BatteryModule

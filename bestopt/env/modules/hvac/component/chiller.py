@@ -6,7 +6,7 @@ from typing import Dict, Any
 import numpy as np
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, ChillerState, PumpState, CoilState, CoolingTowerState
+from bestopt.env.core.data_structure import ChillerComponentAction, ChillerComponentState, PumpComponentState, CoilComponentState, CoolingTowerComponentState
 
 
 class ChillerModule(BaseModule):
@@ -73,11 +73,11 @@ class ChillerModule(BaseModule):
 
     def step(
         self,
-        state: "ChillerState",
-        action: "ThermalAction",
-        coil_state: "CoilState",
-        pump_state: "PumpState",
-        cooling_tower_state: "CoolingTowerState",
+        state: "ChillerComponentState",
+        action: "ChillerComponentAction",
+        coil_state: "CoilComponentState",
+        pump_state: "PumpComponentState",
+        cooling_tower_state: "CoolingTowerComponentState",
         timestep: float
     ) -> Dict[str, Any]:
         t_in = float(getattr(coil_state, "water_outlet_temp_C", 12.0))
