@@ -61,7 +61,7 @@ class PumpLocalController(BaseModule):
         # Calculate required flowrate
         # pump_flowrate = abs(thermal_load / (self.delta_T * WATER_DENSITY * WATER_SPECIFIC_HEAT))
 
-        pump_flowrate = abs(thermal_load / (0.8 * (return_air_temp - 7) * WATER_DENSITY * WATER_SPECIFIC_HEAT))
+        pump_flowrate = abs(thermal_load / (0.8 * (return_air_temp - 5) * WATER_DENSITY * WATER_SPECIFIC_HEAT))
 
         # Enforce maximum limit
         pump_flowrate = min(pump_flowrate, self.pump_flowrate_max)

@@ -44,7 +44,7 @@ for t in range(n_steps):
                        thermal_storage={}, total_heating_load=0.0, total_cooling_load=0.0)
     # === Fake Supervisory Controller Outputs ===
     action.thermal_load = -8_0000 + 2000 * (t % 6)  # Cooling demand (negative)
-    action.supervisory_supply_air_temperature = 13.0       # SAT setpoint
+    action.supervisory_supply_air_temperature = 15.0       # SAT setpoint
     action.supervisory_supply_air_flow_rate = abs(action.thermal_load)/1005/1.225/13 # m³/s
     action.chws_temp_c_sp = 5.0              # CHW setpoint
     action.condenser_temp_c_sp = 25.0        # CW setpoint
