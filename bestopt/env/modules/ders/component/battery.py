@@ -7,7 +7,7 @@ from enum import Enum
 import logging
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import BatteryState, ElectricalAction, Disturbance
+from bestopt.env.core.data_structure import BatteryComponentState, DERSystemAction, Disturbance
 
 
 class BatteryStatus(Enum):
@@ -42,7 +42,7 @@ class BatteryModule(BaseModule):
         super().__init__(config, name)
 
         # Battery specifications
-        self.capacity_kwh = config.get("capacity_kwh", 10.0)  # Nominal capacity in kWh
+        self.capacity_kwh = config.get("rated_capacity_kWh", 10.0)  # Nominal capacity in kWh
         self.capacity_ah = config.get("capacity_ah", self.capacity_kwh * 1000 / 400)  # Ah (assuming 400V nominal)
         self.nominal_voltage = config.get("nominal_voltage", 400.0)  # Volts
         self.max_power_kw = config.get("max_power_kw", 5.0)  # Maximum charge/discharge power
@@ -103,10 +103,10 @@ class BatteryModule(BaseModule):
         self.current_soc = self.soc_initial
 
     def step(self,
-             state: BatteryState,
-             action: ElectricalAction,
+             state: BatteryComponentState,
+             action: Dict,
              disturbance: Disturbance,
-             timestep: int) -> Dict[str, Any]:
+             timestep: int) -> BatteryComponentState:
         """
         Execute battery charging/discharging for current timestep.
 
@@ -122,70 +122,74 @@ class BatteryModule(BaseModule):
         try:
             # Get temperature from disturbance (could be indoor or outdoor)
             if hasattr(disturbance.weather, 'outdoor_dry_bulbtemperature'):
-                self.current_temperature = disturbance.weather.outdoor_dry_bulbtemperature
+                self.current_temperature = disturbance.weather.outdoor_dry_bulb_temp
 
             # Extract power command from action
-            power_command = self._get_power_command(action)
+            # power_command = self._get_power_command(action)
+            #I am using simplifoed for now
+            power_command = action['net_power_kw']
 
             # Apply operational constraints
-            power_actual = self._apply_constraints(power_command, state.battery_soc)
-
+            # power_actual = self._apply_constraints(power_command, state.soc)
+            power_actual = power_command # apply constraint later
             # Calculate energy transferred (assuming 1-hour timestep, adjust as needed)
             # Note: You should get the actual timestep duration from the environment
-            timestep_hours = 1.0 / 3600  # Convert seconds to hours if timestep is in seconds
+            timestep_hours = 900 / 3600  # Convert seconds to hours if timestep is in seconds
             # Or get from environment configuration
 
             # Update SOC based on power flow
             energy_delta_kwh = self._calculate_energy_transfer(power_actual, timestep_hours)
-            new_soc = self._update_soc(state.battery_soc, energy_delta_kwh)
+            new_soc = self._update_soc(state.soc, energy_delta_kwh)
 
             # Apply self-discharge
             new_soc = self._apply_self_discharge(new_soc, timestep_hours)
 
             # Update state
-            state.battery_soc = new_soc
-            state.power_charge = max(0, power_actual)  # Positive power for charging
-            state.power_discharge = max(0, -power_actual)  # Positive value for discharging
+            state.soc = new_soc
             state.temperature = self.current_temperature
-            state.status = self.status.value
+        except:
+            print("error")
 
-            # Update degradation
-            self._update_degradation(abs(energy_delta_kwh))
+        return state
 
-            # Update cumulative metrics
-            if power_actual > 0:
-                self.total_energy_charged_kwh += energy_delta_kwh
-            else:
-                self.total_energy_discharged_kwh += abs(energy_delta_kwh)
+        #
+        #     # Update degradation
+        #     self._update_degradation(abs(energy_delta_kwh))
+        #
+        #     # Update cumulative metrics
+        #     if power_actual > 0:
+        #         self.total_energy_charged_kwh += energy_delta_kwh
+        #     else:
+        #         self.total_energy_discharged_kwh += abs(energy_delta_kwh)
+        #
+        #     # Log operation
+        #     if abs(power_actual) > 10:  # Only log significant operations
+        #         operation = "Charging" if power_actual > 0 else "Discharging"
+        #         self.logger.debug(
+        #             f"{operation}: {abs(power_actual):.1f}W, "
+        #             f"SOC: {new_soc:.1%}, "
+        #             f"Status: {self.status.value}"
+        #         )
+        #
+        #     # Check for warnings
+        #     self._check_status(new_soc, self.current_temperature)
+        #
+        #     return {
+        #         "power_actual": power_actual,
+        #         "energy_transferred_kwh": energy_delta_kwh,
+        #         "soc": new_soc,
+        #         "available_charge_power": self._get_available_charge_power(new_soc),
+        #         "available_discharge_power": self._get_available_discharge_power(new_soc),
+        #         "status": self.status.value
+        #     }
+        #
+        # except Exception as e:
+        #     self.logger.error(f"Error in Battery step calculation: {e}")
+        #     self.status = BatteryStatus.FAULT
+        #     self.fault_message = str(e)
+        #     return {"power_actual": 0.0, "error": str(e), "status": BatteryStatus.FAULT.value}
 
-            # Log operation
-            if abs(power_actual) > 10:  # Only log significant operations
-                operation = "Charging" if power_actual > 0 else "Discharging"
-                self.logger.debug(
-                    f"{operation}: {abs(power_actual):.1f}W, "
-                    f"SOC: {new_soc:.1%}, "
-                    f"Status: {self.status.value}"
-                )
-
-            # Check for warnings
-            self._check_status(new_soc, self.current_temperature)
-
-            return {
-                "power_actual": power_actual,
-                "energy_transferred_kwh": energy_delta_kwh,
-                "soc": new_soc,
-                "available_charge_power": self._get_available_charge_power(new_soc),
-                "available_discharge_power": self._get_available_discharge_power(new_soc),
-                "status": self.status.value
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error in Battery step calculation: {e}")
-            self.status = BatteryStatus.FAULT
-            self.fault_message = str(e)
-            return {"power_actual": 0.0, "error": str(e), "status": BatteryStatus.FAULT.value}
-
-    def _get_power_command(self, action: ElectricalAction) -> float:
+    def _get_power_command(self, action: DERSystemAction) -> float:
         """
         Extract power command from electrical action.
 
@@ -303,9 +307,9 @@ class BatteryModule(BaseModule):
             Energy change in kWh (positive = added to battery)
         """
         if power > 0:  # Charging
-            energy_kwh = (power / 1000) * timestep_hours * self.charge_efficiency
+            energy_kwh = (power ) * timestep_hours * self.charge_efficiency
         else:  # Discharging
-            energy_kwh = (power / 1000) * timestep_hours / self.discharge_efficiency
+            energy_kwh = (power) * timestep_hours / self.discharge_efficiency
 
         return energy_kwh
 

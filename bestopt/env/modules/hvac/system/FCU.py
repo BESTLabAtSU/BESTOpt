@@ -204,9 +204,7 @@ class FCUModule(BaseModule):
             tower_state.fan_power_W +
             tower_state.pump_power_W
         )
-        print(fan_state.power_W, pump_state.power_W, chiller_state.power_W,
-            tower_state.fan_power_W,
-            tower_state.pump_power_W)
+
         # Calculate cumulative energy
         energy_total_J = 0
         if hasattr(fan_state, 'energy_j_cum'):

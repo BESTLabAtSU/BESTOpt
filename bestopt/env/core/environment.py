@@ -96,6 +96,7 @@ class BESTOptEnvironment:
         # Build runtime environment with proper order
         self._create_thermal_zone_modules()  # Create thermal modules
         self._warmup_thermal_modules()  # Warmup for ModNN encoder
+        self._create_electrical_zone_modules()  # Create thermal modules
         self._initialize_clusters()  # Initialize hierarchy cluster states
         self._create_all_modules()  # Create module instance
 
@@ -105,46 +106,22 @@ class BESTOptEnvironment:
         self._validate_configuration()
         self.logger.info(f"Environment configuration finished")
 
-    # Module generation
-    def _generate_components(self) -> None:
-        """Generate all components (modules, controllers, disturbances)."""
-        # Generate modules
-        buildings_config = self.config.get('buildings', {})
-        thermal_modules_to_warmup = []
-        for building_id, building_info in buildings_config.items():
-            # Process each component type in the building
-            for component_type in ['der_systems', 'hvac_systems', 'thermal_zones']:  # TODO need to be adaptive
-                components = building_info.get(component_type, {})
-                for component_id, component_config in components.items():
-                    instance = self._create_instance(
-                        name=component_id,
-                        config=component_config,
-                        component_type=f"{component_type}.{component_id}",
-                        must_subclass=BaseModule
-                    )
-                    if instance:
-                        self.building_modules[building_id][component_type][component_id] = instance
-                        component_path = f"{building_id}.{component_type}.{component_id}"
-                        self._create_local_controller_if_exists(component_path, instance)
-                        if component_type == 'thermal_zones':
-                            thermal_modules_to_warmup.append((building_id, component_id, instance))
+    def _create_thermal_zone_modules(self):
+        """Create thermal zone modules before cluster initialization."""
+        created_zones = {}  # Track which zones are created for validation
 
-        self._warmup_thermal_modules(thermal_modules_to_warmup)
-        # Generate controller
-        controllers_config = self.config.get('controllers', {})
-        active_controllers = self.config.get('active_controllers', {})
+        for zone_key, zone_config in self.thermal_zone_modules_config.items():
+            # Validate zone key format
+            if '.' not in zone_key:
+                self.logger.error(f"Invalid zone key format: {zone_key}. Expected 'building_id.zone_id'")
+                continue
 
-        for controller_key, controller_info in controllers_config.items():
-            instance = self._create_instance(
-                name=controller_key,
-                config=controller_info,
-                component_type="controller",
-                must_subclass=BaseModule
-            )
-            if instance:
-                self.controllers[controller_key] = instance
-        if not active_controllers:
-            self.logger.warning("No active controllers assigned to buildings")
+            building_id, zone_id = zone_key.split('.', 1)  # Use maxsplit=1 in case zone_id has dots
+
+            # Verify this building exists in configuration
+            if building_id not in self.buildings_config:
+                self.logger.warning(f"Zone {zone_key} references non-existent building {building_id}")
+                continue
 
             instance = self._create_instance(
                 name=zone_key,
@@ -166,6 +143,52 @@ class BESTOptEnvironment:
         # Validate all configured zones have modules
         for building_id, building_config in self.buildings_config.items():
             configured_zones = building_config.get('thermal_zones', ['zone0'])
+            created_for_building = created_zones.get(building_id, [])
+
+            for zone_id in configured_zones:
+                if zone_id not in created_for_building:
+                    self.logger.warning(f"Building {building_id} expects zone {zone_id} but no module was created")
+
+            # Log zone configuration
+            self.logger.info(f"Building {building_id}: {len(created_for_building)} zones created "
+                             f"({', '.join(created_for_building) if created_for_building else 'none'})")
+
+        self.logger.info(f"Created {len(self.thermal_zone_modules)} thermal zone modules total")
+
+    def _create_electrical_zone_modules(self):
+        """Create electrical zone modules before cluster initialization."""
+        created_zones = {}  # Track which zones are created for validation
+
+        for zone_key, zone_config in self.electrical_zone_modules_config.items():
+            # Validate zone key format
+            if '.' not in zone_key:
+                self.logger.error(f"Invalid zone key format: {zone_key}. Expected 'building_id.zone_id'")
+                continue
+
+            building_id, zone_id = zone_key.split('.', 1)  # Use maxsplit=1 in case zone_id has dots
+
+            # Verify this building exists in configuration
+            if building_id not in self.buildings_config:
+                self.logger.warning(f"Zone {zone_key} references non-existent building {building_id}")
+                continue
+
+            instance = self._create_instance(
+                name=zone_key,
+                config=zone_config,
+                component_type="electrical_zone",
+                must_subclass=BaseModule
+            )
+
+            if instance:
+                self.electrical_zone_modules[zone_key] = instance
+                if building_id not in created_zones:
+                    created_zones[building_id] = []
+                created_zones[building_id].append(zone_id)
+                self.logger.debug(f"Created electrical zone module: {zone_key} (Building: {building_id}, Zone: {zone_id})")
+
+        # Validate all configured zones have modules
+        for building_id, building_config in self.buildings_config.items():
+            configured_zones = building_config.get('electrical_zones', ['zone0'])
             created_for_building = created_zones.get(building_id, [])
 
             for zone_id in configured_zones:
@@ -255,7 +278,6 @@ class BESTOptEnvironment:
             # Check if thermal module exists for this zone
             if zone_key not in self.thermal_zone_modules:
                 self.logger.warning(f"No thermal module for zone {zone_key}, using defaults")
-                # Continue anyway with default values
 
             # Get initial temperature from warmup if available
             initial_temp = self._thermal_initial_temps.get(zone_key)
@@ -371,7 +393,7 @@ class BESTOptEnvironment:
                         return
 
                     if not hasattr(module, 'register_component_state'):
-                        self.logger.warning(f"Module for system {system_id} has no register_components method")
+                        self.logger.warning(f"Module for system {system_id} has no register_component_state method")
                         return
 
     def _create_instance(self, name: str, config: Dict[str, Any],
@@ -404,83 +426,6 @@ class BESTOptEnvironment:
             self.logger.error(f"Failed to create {component_type} '{name}': {e}")
             raise
 
-    def _initialize_component_states(self) -> None:
-        """Initialize state objects for all created modules."""
-        # @TODO the current version grab init state from config,
-        # but I feel when we instance the module we already call the init function
-        # so here, we can use the simple get state function to initialize component states
-        # need to update later
-        buildings_config = self.config.get('buildings', {})
-
-        for building_id, building_info in buildings_config.items():
-            state = self.states[building_id]
-
-            # Initialize electrical component states
-            for component_type in ['der_systems']:
-                components = building_info.get(component_type, {})
-                for component_id, component_config in components.items():
-                    system_config = component_config.get('parameters').get('system_config')
-                    battery_config = system_config.get('bat')
-                    ev_config = system_config.get('ev')
-                    # @NOTE only module with state variable need to be initialized
-                    if battery_config is not None:
-                        state.electrical.batteries[component_id] = BatteryState(
-                            component_id=component_id,
-                            battery_soc=battery_config.get('initial_soc', 0.5)
-                        )
-
-                    if ev_config is not None:
-                        state.electrical.evs[component_id] = EVState(
-                            component_id=component_id,
-                            ev_soc=ev_config.get('initial_soc', 0.5)
-                        )
-
-            # Initialize thermal component states
-            for component_type in ['hvac_systems', 'thermal_zones', 'thermal_storage']:
-                components = building_info.get(component_type, {})
-                for component_id, component_config in components.items():
-                    if component_type == 'hvac_systems':
-                        state.thermal.hvac_systems[component_id] = HVACState(
-                            component_id=component_id
-                        )
-                    elif component_type == 'thermal_zones':
-                        state.thermal.thermal_zones[component_id] = BLDGTState(
-                            component_id=component_id,
-                            temperature=self.building_modules[building_id][component_type]['zone0'].initial_temp
-                        ) #@TODO replace the hard coding "zone0" later
-                    elif component_type == 'thermal_storage':
-                        tes_config = component_config.get('parameters', {})
-                        initial_temp = tes_config.get('initial_temperature', 22.0)
-                        initial_soc = tes_config.get('initial_soc', 0.5)
-                        state.thermal.thermal_storage[component_id] = TESState(
-                            component_id=component_id,
-                            temperature=initial_temp,
-                            tes_soc=initial_soc
-                        )
-
-            # Initialize water component states
-            for component_type in ['water_heaters']:
-                components = building_info.get(component_type, {})
-                for component_id, component_config in components.items():
-                    if component_type == 'water_heaters':
-                        heater_config = component_config.get('parameters', {})
-                        initial_temp = heater_config.get('initial_temperature', 60.0)
-                        state.water.water_heaters[component_id] = WaterHeaterState(
-                            component_id=component_id,
-                            tank_temperature=initial_temp
-                        )
-
-    def _validate_controller_assignments(self):
-        """Validate that controller assignments match the expected domain structure."""
-        active_controllers = self.config.get('active_controllers', {})
-
-        for building_id in self.states.keys():
-            if building_id not in active_controllers:
-                self.logger.warning(f"Building {building_id} has no domain controllers assigned")
-            else:
-                domains_assigned = list(active_controllers[building_id].keys())
-                self.logger.info(f"Building {building_id} has controllers for domains: {domains_assigned}")
-
     @staticmethod
     def _import_class(class_path: str, must_subclass: Optional[type] = None):
         """Import a class from a module path."""
@@ -494,34 +439,18 @@ class BESTOptEnvironment:
             raise TypeError(f"{class_path} must inherit from {must_subclass.__name__}")
         return cls
 
-    def _hvac_uses_water(self, hvac_config: Dict) -> bool:
-        """Check if HVAC system uses water (e.g., for chilled water)."""
-        params = hvac_config.get('parameters', {})
-        # Check for water-using components in configuration
-        components = params.get('components', {})
-        water_components = ['chiller', 'cooling_tower', 'boiler']
-
-        for comp_config in components.values():
-            if isinstance(comp_config, dict) and comp_config.get('type') in water_components:
-                return True
-
-        # Also check for direct component references
-        return any(key in params for key in ['chiller', 'cooling_tower', 'boiler'])
-
     def step(self, external_actions: Optional[Dict[str, ClusterAction]] = None) -> Tuple[
         Dict[str, ClusterObservation], bool, Dict[str, Any]]:
         """
-        Execute simulation step with proper phase ordering.
+        Execute simulation step with proper phase ordering and information flow.
 
         Execution order:
         1. Update disturbances
-        2. Calculate PV generation (needed for electrical decisions)
-        3. Execute thermal systems (HVAC)
-        4. Execute thermal zones
-        5. Update electrical loads based on HVAC power
-        6. Execute electrical systems (DER)
-        7. Execute water systems
-        8. Update observations
+        2. Water systems (controller → execution → update thermal demand)
+        3. Thermal systems (controller → HVAC execution → zones → update electrical load)
+        4. PV generation calculation
+        5. Electrical systems (controller → DER execution)
+        6. Update observations
         """
         if self.done:
             self.logger.warning("Environment is done. Call reset() to restart.")
@@ -533,23 +462,25 @@ class BESTOptEnvironment:
         # Phase 1: Update global disturbances
         self._update_disturbances()
 
-        # Phase 2: Process each cluster
+        # Phase 2: Process each cluster with proper system ordering
         for cluster_id, cluster_state in self.cluster_states.items():
-            # Get cluster action (external or from controllers)
-            if external_actions and cluster_id in external_actions:
-                cluster_action = external_actions[cluster_id]
-            else:
-                cluster_action = self._get_cluster_action(cluster_id, cluster_state)
+            # Initialize cluster action container
+            cluster_action = ClusterAction(cluster_id=cluster_id) if not external_actions else \
+                external_actions.get(cluster_id, ClusterAction(cluster_id=cluster_id))
 
+            # Update observation for current state
+            self._update_cluster_observation(cluster_id, cluster_state)
+
+            # Execute systems in dependency order with interleaved control
+            self._execute_cluster_systems_ordered(cluster_id, cluster_state, cluster_action)
+
+            # Store final cluster action
             self.cluster_actions[cluster_id] = cluster_action
-
-            # Execute systems in proper order
-            self._execute_cluster_systems(cluster_id, cluster_state, cluster_action)
 
             # Propagate cross-domain effects
             propagate_cross_domain_effects(cluster_state)
 
-            # Update observations
+            # Final observation update
             self._update_cluster_observation(cluster_id, cluster_state)
 
         # Update simulation tracking
@@ -560,6 +491,188 @@ class BESTOptEnvironment:
 
         info = self._collect_step_info()
         return self.cluster_observations, self.done, info
+
+    def _execute_cluster_systems_ordered(self, cluster_id: str, cluster_state: ClusterState,
+                                         cluster_action: ClusterAction):
+        """
+        Execute systems in proper dependency order with interleaved control decisions.
+
+        Order: Water → Thermal → Electrical
+        Each stage: Controller → System Execution → State Update
+        """
+        # Get water control action and execute water systems
+        water_systems = [sid for sid, state in cluster_state.water.systems.items()
+                         if state.system_type == SystemType.WATER]
+        # This is just a placeholder
+        for system_id in water_systems:
+            if system_id in self.system_controllers:
+                # Get water controller action
+                water_controller = self.system_controllers[system_id]
+                water_action = water_controller.step(
+                    state=cluster_state.water.systems[system_id],
+                    observation=self.cluster_observations[cluster_id],
+                    disturbance=self.disturbance,
+                    timestep=self.current_step
+                )
+                cluster_action.water.system_actions[system_id] = water_action
+
+                # Execute water system immediately
+                if system_id in self.system_modules:
+                    water_module = self.system_modules[system_id]
+                    water_result = water_module.step(
+                        state=cluster_state.water.systems[system_id],
+                        action=water_action,
+                        disturbance=self.disturbance,
+                        timestep=self.current_step
+                    )
+
+                    # Cache thermal demand from water system for thermal controller
+                    if 'thermal_demand' in water_result:
+                        self.state_manager.cache['water_thermal_demand'][system_id] = water_result['thermal_demand']
+
+        # Get thermal control action with updated water thermal demand
+        hvac_systems = [sid for sid, state in cluster_state.thermal.systems.items()
+                        if state.system_type == SystemType.HVAC]
+
+        for system_id in hvac_systems:
+            if system_id in self.system_controllers:
+                # Thermal controller can now use updated water thermal demand
+                thermal_controller = self.system_controllers[system_id]
+
+                # Pass water thermal demand to controller via observation or state
+                if hasattr(thermal_controller, 'set_water_thermal_demand'):
+                    water_demand = sum(self.state_manager.cache.get('water_thermal_demand', {}).values())
+                    # PLace holder
+                    thermal_controller.set_water_thermal_demand(water_demand)
+
+                thermal_action = thermal_controller.step(
+                    state=cluster_state.thermal.systems[system_id],
+                    observation=self.cluster_observations[cluster_id],
+                    disturbance=self.disturbance,
+                    timestep=self.current_step
+                )
+                cluster_action.thermal.system_actions[system_id] = thermal_action
+
+                # Execute HVAC system immediately
+                if system_id in self.system_modules:
+                    hvac_module = self.system_modules[system_id]
+
+                    # Set return air temperature from zones
+                    building_ids = self.system_building_map.get(system_id, [])
+                    all_zone_temps = []
+                    for building_id in building_ids:
+                        building_system_id = f"{building_id}_building"
+                        building_system = cluster_state.thermal.systems.get(building_system_id)
+                        if building_system:
+                            for component in building_system.components.values():
+                                if component.component_type == ComponentType.THERMAL_ZONE:
+                                    all_zone_temps.append(component.temperature)
+
+                    if all_zone_temps:
+                        return_air_temp = sum(all_zone_temps) / len(all_zone_temps)
+                        hvac_module.update_return_air_temperature(return_air_temp)
+
+                    hvac_result = hvac_module.step(
+                        state=cluster_state.thermal.systems[system_id],
+                        action=thermal_action,
+                        disturbance=self.disturbance,
+                        timestep=self.current_step
+                    )
+
+                    # Cache HVAC results
+                    if 'FCU_power_total_W' in hvac_result:
+                        self.state_manager.cache['hvac_power'][system_id] = hvac_result['FCU_power_total_W']
+                    if 'Q_zone_actual_W' in hvac_result:
+                        building_id = self.system_building_map.get(system_id, ['unknown'])[0]
+                        if not hasattr(self.state_manager.cache, 'hvac_thermal_load'):
+                            self.state_manager.cache['hvac_thermal_load'] = {}
+                        self.state_manager.cache['hvac_thermal_load'][building_id] = hvac_result['Q_zone_actual_W']
+
+        # Execute thermal zones with HVAC loads
+        self._execute_thermal_zones(cluster_state, cluster_action)
+        self._execute_electrical_zones(cluster_state, cluster_action)
+        # Update building electrical loads based on HVAC power
+        # self._update_building_loads(cluster_state)
+
+        # Calculate PV generation before electrical control decision
+        self._execute_pv_generation(cluster_state, cluster_action)
+        # print(cluster_state.electrical.systems['SFH_1_building'].components['electrical'].building_power_w)
+        # print(cluster_state.electrical.systems['der_system_1'].components['pv_1'].generation_w)
+
+        # Get electrical control action with all updated information
+        der_systems = [sid for sid, state in cluster_state.electrical.systems.items()
+                       if state.system_type == SystemType.DER]
+        #@todo ADD centralized/decentralized
+        for system_id in der_systems:
+            if system_id in self.system_controllers:
+                electrical_controller = self.system_controllers[system_id]
+                electrical_action = electrical_controller.step(
+                    state=cluster_state.electrical.systems,
+                    observation=self.cluster_observations[cluster_id],
+                    disturbance=self.disturbance,
+                    timestep=self.current_step
+                )
+                cluster_action.electrical.system_actions[system_id] = electrical_action
+        #
+                # Execute DER system immediately
+                if system_id in self.system_modules:
+                    der_module = self.system_modules[system_id]
+                    der_result = der_module.step(
+                        state=cluster_state.electrical.systems[system_id],
+                        action=electrical_action,
+                        disturbance=self.disturbance,
+                        resolution=self.res,
+                        timestep=self.current_step,
+                    )
+
+    def _get_controller_action_for_system(self, system_id: str, cluster_state: ClusterState,
+                                          cluster_observation: ClusterObservation,
+                                          domain_type: DomainType) -> Any:
+        """
+        Get control action for a single system.
+        This replaces the bulk action collection with targeted action generation.
+        """
+        if system_id not in self.system_controllers:
+            return None
+
+        controller = self.system_controllers[system_id]
+        domain_state = cluster_state.get_domain(domain_type)
+        system_state = domain_state.systems.get(system_id)
+
+        if not system_state:
+            return None
+
+        # Get any cached information relevant to this controller
+        cached_info = {}
+        if domain_type == DomainType.THERMAL:
+            cached_info['water_thermal_demand'] = sum(
+                self.state_manager.cache.get('water_thermal_demand', {}).values()
+            )
+        elif domain_type == DomainType.ELECTRICAL:
+            cached_info['hvac_power'] = sum(
+                self.state_manager.cache.get('hvac_power', {}).values()
+            )
+            cached_info['building_load'] = self._calculate_building_load(cluster_state)
+            cached_info['pv_generation'] = sum(
+                self.state_manager.cache.get('pv_generation', {}).values()
+            )
+
+        # Call controller with additional context if supported
+        if hasattr(controller, 'step_with_context'):
+            return controller.step_with_context(
+                state=system_state,
+                observation=cluster_observation,
+                disturbance=self.disturbance,
+                timestep=self.current_step,
+                context=cached_info
+            )
+        else:
+            return controller.step(
+                state=system_state,
+                observation=cluster_observation,
+                disturbance=self.disturbance,
+                timestep=self.current_step
+            )
 
     def _update_disturbances(self):
         """Update global disturbances from modules."""
@@ -608,27 +721,27 @@ class BESTOptEnvironment:
 
         return cluster_action
 
-    def _execute_cluster_systems(self, cluster_id: str, cluster_state: ClusterState,
-                                 cluster_action: ClusterAction):
-        """Execute all systems in the cluster with proper ordering."""
-
-        # Phase 1: Calculate PV generation (needed for electrical decisions)
-        self._execute_pv_generation(cluster_state, cluster_action)
-
-        # Phase 2: Execute thermal systems (HVAC)
-        self._execute_thermal_systems(cluster_state, cluster_action)
-
-        # Phase 3: Execute thermal zones
-        self._execute_thermal_zones(cluster_state, cluster_action)
-
-        # Phase 4: Update building loads based on HVAC power
-        self._update_building_loads(cluster_state)
-
-        # Phase 5: Execute electrical systems (DER with updated loads)
-        self._execute_electrical_systems(cluster_state, cluster_action)
-
-        # Phase 6: Execute water systems if any
-        self._execute_water_systems(cluster_state, cluster_action)
+    # def _execute_cluster_systems(self, cluster_id: str, cluster_state: ClusterState,
+    #                              cluster_action: ClusterAction):
+    #     """Execute all systems in the cluster with proper ordering."""
+    #
+    #     # Phase 1: Calculate PV generation (needed for electrical decisions)
+    #     self._execute_pv_generation(cluster_state, cluster_action)
+    #
+    #     # Phase 2: Execute thermal systems (HVAC)
+    #     self._execute_thermal_systems(cluster_state, cluster_action)
+    #
+    #     # Phase 3: Execute thermal zones
+    #     self._execute_thermal_zones(cluster_state, cluster_action)
+    #
+    #     # Phase 4: Update building loads based on HVAC power
+    #     self._update_building_loads(cluster_state)
+    #
+    #     # Phase 5: Execute electrical systems (DER with updated loads)
+    #     self._execute_electrical_systems(cluster_state, cluster_action)
+    #
+    #     # Phase 6: Execute water systems if any
+    #     self._execute_water_systems(cluster_state, cluster_action)
 
     def _execute_pv_generation(self, cluster_state: ClusterState, cluster_action: ClusterAction):
         """Calculate PV generation for all DER systems."""
@@ -636,15 +749,18 @@ class BESTOptEnvironment:
             if system_state.system_type == SystemType.DER and system_id in self.system_modules:
                 der_module = self.system_modules[system_id]
 
-                # Let the DER module handle PV generation
-                # The module will update its internal component states
-                if hasattr(der_module, 'calculate_pv_generation'):
-                    pv_generation = der_module.calculate_pv_generation(
-                        disturbance=self.disturbance,
-                        timestep=self.current_step
-                    )
-                    # Cache for electrical control decisions
-                    self.state_manager.cache['pv_generation'][system_id] = pv_generation
+                # Pass the system state to calculate_pv_generation
+                pv_generation = der_module.calculate_pv_generation(
+                    state=system_state,  # Pass the actual system state
+                    disturbance=self.disturbance,
+                    timestep=self.current_step,
+                )
+
+                # Cache for electrical control decisions
+                self.state_manager.cache['pv_generation'][system_id] = pv_generation
+
+                # Log the generation
+                self.logger.debug(f"DER {system_id}: Total PV generation = {pv_generation:.1f}W")
 
     def _execute_thermal_systems(self, cluster_state: ClusterState, cluster_action: ClusterAction):
         """Execute HVAC systems."""
@@ -757,6 +873,41 @@ class BESTOptEnvironment:
                             if 'humidity' in zone_result:
                                 zone_state.humidity_pct = zone_result['humidity']
 
+    def _execute_electrical_zones(self, cluster_state: ClusterState,
+                               cluster_action: ClusterAction):
+        """Execute thermal zone dynamics using HVAC actions directly."""
+
+        # Process each building's thermal zones
+        for system_id, system_state in cluster_state.thermal.systems.items():
+            if system_state.system_type == SystemType.BUILDING:
+                building_id = system_id.replace('_building', '')
+
+                # Find HVAC system serving this building
+                hvac_system_id = self.building_system_map.get(building_id, {}).get(
+                    'thermal')
+
+                # Get HVAC thermal load from the HVAC module results or action
+                hvac_load_total = 0.0
+
+                if hvac_system_id and hvac_system_id in self.system_modules:
+                    hvac_module = self.system_modules[hvac_system_id]
+                    if hasattr(hvac_module, 'FCU_power_total_W'):
+                        hvac_load_total = hvac_module.FCU_power_total_W
+
+                # Process each zone with its share of HVAC load
+                for zone_id, zone_state in system_state.components.items():
+                    if zone_state.component_type == ComponentType.ELECTRICAL_ZONE:
+                        zone_key = f"{building_id}.{zone_id}"
+                        #@ todo the name and structure need to be revised!
+                        zone_module = self.electrical_zone_modules['SFH_1.zone0']
+                        building_power = zone_module.step(
+                            disturbance=self.disturbance,
+                            timestep=self.current_step
+                        )
+                        zone_state.total_load_w = building_power+hvac_load_total
+                        zone_state.hvac_load_w = hvac_load_total
+                        zone_state.building_power_w = building_power
+
     def _update_building_loads(self, cluster_state: ClusterState):
         """Update electrical loads based on HVAC and building operations."""
         # Sum HVAC power from all HVAC systems
@@ -782,9 +933,7 @@ class BESTOptEnvironment:
         for system_id, system_state in cluster_state.electrical.systems.items():
             if system_state.system_type == SystemType.DER and system_id in self.system_modules:
                 der_module = self.system_modules[system_id]
-
                 electrical_action = cluster_action.electrical.system_actions.get(system_id)
-
                 # Calculate total building load for this DER system
                 building_load = self._calculate_building_load(cluster_state)
 

@@ -8,6 +8,9 @@ from typing import Dict, Any, Optional, List, Set, Union
 from enum import Enum
 import numpy as np
 
+# @TODO set_domain is important to manager cross domain observations, whihc need to follow a clean variable format, I will revise it later
+# @Considering to add a more detailed observation structure
+
 
 # Enumerations
 
@@ -80,12 +83,13 @@ class HVACMode(Enum):
     AUTO = "auto"
     ECONOMIZER = "economizer"
 
-class PowerFlowPriority(Enum):
-    """Priority modes for power flow management"""
-    COST_MINIMIZATION = "cost_min"
+
+class DERMode(Enum):
+    """DER-specific operation modes."""
+    TIME_OF_USE = "tou"
     SELF_CONSUMPTION = "self_consumption"
-    PEAK_SHAVING = "peak_shaving"
-    BACKUP_PRIORITY = "backup_priority"
+    ISLANDED = "island"
+
 
 
 class PowerFlowMode(Enum):
@@ -363,8 +367,12 @@ class BatteryComponentState(ComponentState):
     """Battery component state."""
     soc: float = 0.5  # State of charge (0-1)
     power_w: float = 0.0  # Positive=charging, Negative=discharging
-    capacity_wh: float = 0.0
+    capacity_kwh: float = 0.0
     efficiency: float = 0.95
+    charge_speed: float = 0.0
+    discharge_speed: float = 0.0
+    charge_efficiency: float = 0.0
+    temperature: float = 0.0
 
     def __post_init__(self):
         self.component_type = ComponentType.BATTERY
@@ -377,8 +385,10 @@ class EVComponentState(ComponentState):
     soc: float = 0.5  # State of charge (0-1)
     power_w: float = 0.0  # Positive=charging, Negative=discharging
     capacity_wh: float = 0.0
-    efficiency: float = 0.95
-
+    charge_speed: float = 0.0
+    discharge_speed: float = 0.0
+    charge_efficiency: float = 0.0
+    initially_connected: bool = True
     def __post_init__(self):
         self.component_type = ComponentType.EV
         self.set_domain_impact(DomainType.ELECTRICAL, 'power', self.power_w)
@@ -404,6 +414,8 @@ class ElectricalZoneComponentState(ComponentState):
     lighting_load_w: float = 0.0
     plug_load_w: float = 0.0
     total_load_w: float = 0.0
+    hvac_load_w : float = 0.0
+    building_power_w: float = 0.0
 
     def __post_init__(self):
         self.component_type = ComponentType.ELECTRICAL_ZONE
@@ -450,23 +462,8 @@ class DERSystemState(SystemState):
 
 
 @dataclass
-class ElectricalAction:
-    """Electrical control actions."""
-    pv2building: float = 0.0
-    pv2battery: float = 0.0
-    pv2ev: float = 0.0
-    pv2grid: float = 0.0
-    battery2building: float = 0.0
-    battery2ev: float = 0.0
-    battery2grid: float = 0.0
-    ev2building: float = 0.0
-    ev2grid: float = 0.0
-    grid2building: float = 0.0
-    grid2battery: float = 0.0
-    grid2ev: float = 0.0
-    # @TODO Battery control
-    # @TODO PV control
-    # @TODO EV control
+class BuildingSystemState(SystemState):
+    """Building system state spanning all domains."""
 
     def __init__(self, system_id: str):
         super().__init__(
@@ -517,15 +514,10 @@ class FanComponentAction(ComponentAction):
 
 
 @dataclass
-class OccupancyData:
-    """Occupancy and comfort requirements."""
-    occupancy_count: int = 0
-    step_of_day: int = 0
-    occupancy_fraction: float = 0.0  # 0-1
-    _is_ev_connected: float = 0.0   # EV status 0-1
-    comfort_temp_min: float = 20.0  # °C
-    comfort_temp_max: float = 26.0  # °C
-    # @TODO add behavior variables later
+class CoilComponentAction(ComponentAction):
+    """Coil control action."""
+    valve_position: float = 0.0  # 0-1
+    water_flow_setpoint_m3s: Optional[float] = None
 
     def __post_init__(self):
         self.component_type = "COIL"
@@ -629,26 +621,23 @@ class HVACSystemAction(SystemAction):
 @dataclass
 class DERSystemAction(SystemAction):
     """DER system control action."""
-    mode: str = "SELF_CONSUMPTION"  # SELF_CONSUMPTION, TIME_OF_USE, DEMAND_RESPONSE
+    mode: str = "TIME_OF_USE"  # SELF_CONSUMPTION, TIME_OF_USE, DEMAND_RESPONSE
 
-    # Power flow commands (system decides how to route power)
-    grid_import_limit_w: Optional[float] = None
-    grid_export_limit_w: Optional[float] = None
+    pv2building: float = 0.0
+    pv2grid: float = 0.0
 
-    # High-level objectives
-    minimize_cost: bool = True
-    minimize_emissions: bool = False
-    maintain_reliability: bool = True
+    # Dictionary fields for multiple component IDs
+    pv2battery: Dict[str, float] = field(default_factory=dict)  # {bat_id: power}
+    pv2ev: Dict[str, float] = field(default_factory=dict)  # {ev_id: power}
 
-    # Component power allocations (from system controller)
-    pv_to_building_w: float = 0.0
-    pv_to_battery_w: float = 0.0
-    pv_to_grid_w: float = 0.0
-    battery_to_building_w: float = 0.0
-    grid_to_building_w: float = 0.0
+    battery2building: Dict[str, float] = field(default_factory=dict)
+    battery2ev: Dict[str, Dict[str, float]] = field(default_factory=dict)  # {bat_id: {ev_id: power}}
 
-    def __post_init__(self):
-        self.system_type = "DER"
+    ev2building: Dict[str, float] = field(default_factory=dict)
+
+    grid2building: float = 0.0
+    grid2battery: Dict[str, float] = field(default_factory=dict)
+    grid2ev: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass

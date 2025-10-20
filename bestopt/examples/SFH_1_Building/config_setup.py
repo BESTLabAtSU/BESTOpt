@@ -26,7 +26,8 @@ cm.add_building(
     parameters={
         "building_type": "single_family_home",
     },
-    thermal_zones=["zone0"]  # Single zone for now
+    thermal_zones=["zone0"],  # Single zone for now
+    electrical_zones=["zone0"] ,
 )
 
 # Add thermal zone to building
@@ -53,23 +54,23 @@ cm.add_thermal_zone_module(
         "retrain": "Off",
         "simulation_start_time": "2023-08-01 00:00:00",
     },
-    class_path="bestopt.env.modules.building.thermal.ThermalDynamicsModule"
+    class_path="bestopt.env.modules.building.thermalzone.ThermalDynamicsModule"
 )
 
-# cm.add_electrical_zone_module(
-#     building_id="SFH_1",
-#     zone_id="zone0",
-#     parameters={
-#         "lighting": {"daytime": 600,
-#                      "nighttime": 1800},
-#         "appliance": {"cooking": 2000,
-#                       "tv": 200,
-#                       "pc": 400,
-#                       "dishwashing": 1000
-#                       },
-#     },
-#     class_path="bestopt.env.modules.building.electrical.ElectricalDynamicModule"
-# )
+cm.add_electrical_zone_module(
+    building_id="SFH_1",
+    zone_id="zone0",
+    parameters={
+        "lighting": {"daytime": 600,
+                     "nighttime": 1800},
+        "appliance": {"cooking": 2000,
+                      "tv": 200,
+                      "pc": 400,
+                      "dishwashing": 1000
+                      },
+    },
+    class_path="bestopt.env.modules.building.electricalzone.ElectricalDynamicModule"
+)
 
 # HVAC System (Thermal Domain)
 cm.add_system(
@@ -96,15 +97,41 @@ cm.add_system(
     class_path="bestopt.env.modules.hvac.system.FCU.FCUModule"
 )
 
-cm.add_building_component(
-    "SFH_1", "der_systems", "pv_bat_ev",
+# DER System (Electrical Domain)
+cm.add_system(
+    cluster_id="residential_cluster_1",
+    system_id="der_system_1",
+    system_type="der_systems",
     parameters={
-        "system_config": {"pv":  {"rated_capacity_kW": 2},
-                          "bat": {"rated_capacity_kWh": 5,
-                                  "initial_soc": 0.3, },
-                          "ev":  {"rated_capacity_kWh": 5,
-                                  "initial_soc": 0.3, },
-                          },
+        "system_name": "PV-Battery-EV System",
+        "system_config": {
+            "pv": {"rated_capacity_kW": 2},
+            "bat": {"rated_capacity_kWh": 10,
+                    "initial_soc": 0.3,
+                    "charge_speed":0.25,
+                    "discharge_speed":0.5,
+                    "charge_efficiency":0.95,},
+            "evs": [
+                {
+                    "id": "ev_tesla",
+                    "rated_capacity_kWh": 75,
+                    "initial_soc": 0.2,
+                    "charge_speed":0.25,
+                    "discharge_speed":0.5,
+                    "charge_efficiency":0.95,
+                    "initially_connected": True
+                },
+                {
+                    "id": "ev_nissan",
+                    "rated_capacity_kWh": 40,
+                    "initial_soc": 0.8,
+                    "charge_speed":0.25,
+                    "discharge_speed":0.5,
+                    "charge_efficiency":0.95,
+                    "initially_connected": False
+                }
+            ]
+        }
     },
     class_path="bestopt.env.modules.ders.system.der.DERModule"
 )
@@ -120,7 +147,7 @@ cm.add_building_component(
 
 # Assign Systems to Buildings
 cm.assign_system_to_buildings("hvac_system_1", ["SFH_1"])
-# cm.assign_system_to_buildings("der_system_1", ["SFH_1"])
+cm.assign_system_to_buildings("der_system_1", ["SFH_1"])
 
 # HVAC System Controller (Thermal)
 cm.add_system_controller(
@@ -140,23 +167,30 @@ cm.add_system_controller(
     class_path="bestopt.env.controllers.thermal.SupervisoryController"
 )
 
-cm.add_controller(
-    "SFH_1_ELECTRIC_Supervisory",
+# DER System Controller (Electrical)
+cm.add_system_controller(
+    controller_id="der_controller_1",
+    system_id="der_system_1",
     parameters={
         "domain": "electrical",
         "type": "rule-based",
         "mode": "self_consumption",
-        # supervisory controller need to know the system info
-        # @ TODO need to reduce the redundancy later
-        "system_config": {"pv":  {"rated_capacity_kW": 2},
-                          "bat": {"rated_capacity_kWh": 5,
-                                  "initial_soc": 0.3, },
-                          "ev":  {"rated_capacity_kWh": 5,
-                                  "initial_soc": 0.3, },
-                          }
+        "bat_soc_min": 0.1,
+        "bat_soc_max": 0.9,
+        "ev_soc_min": 0.2,
+        "ev_soc_target": 0.8,
+        "ev_v2g_enabled": True,
+        "max_grid_import": 10000,
+        "max_grid_export": 5000,
+        "system_config": {
+            "pv": {"rated_capacity_kW": 2},
+            "bat": {"rated_capacity_kWh": 5, "initial_soc": 0.3},
+            "ev": {"rated_capacity_kWh": 5, "initial_soc": 0.3}
+        }
     },
     class_path="bestopt.env.controllers.electrical.SupervisoryController"
 )
+
 
 cm.add_disturbance(
     "weather",
@@ -197,8 +231,13 @@ cm.add_environment(
 # Select cluster and its components
 cm.select_cluster("residential_cluster_1")
 cm.select_buildings(["SFH_1"])
-cm.select_controller_for_building_domain("SFH_1", "thermal", "SFH_1_THERMAL_Supervisory")
-cm.select_controller_for_building_domain("SFH_1", "electrical", "SFH_1_ELECTRIC_Supervisory")
+cm.select_systems(["hvac_system_1", "der_system_1"])
+
+# Assign controllers to systems
+cm.select_controller_for_system("hvac_system_1", "hvac_controller_1")
+cm.select_controller_for_system("der_system_1", "der_controller_1")
+
+# Select disturbances and environment
 cm.select_disturbances(["weather", "occupancy", "price"])
 cm.select_environment()
 
