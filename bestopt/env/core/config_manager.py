@@ -74,6 +74,7 @@ class ConfigurationManager:
     def add_building(self, cluster_id: str, building_id: str,
                      *, parameters: Optional[Dict[str, Any]] = None,
                      thermal_zones: Optional[List[str]] = None,
+                     electrical_zones: Optional[List[str]] = None,
                      overwrite: bool = True) -> None:
         """Add a building to a cluster."""
         clusters = self.config.setdefault("clusters", {})
@@ -90,7 +91,9 @@ class ConfigurationManager:
         buildings[building_id] = {
             "cluster_id": cluster_id,
             "parameters": parameters or {},
-            "thermal_zones": thermal_zones or ["zone0"]  # Default single zone
+            "thermal_zones": thermal_zones or ["zone0"],
+            "electrical_zones": electrical_zones or ["zone0"],
+            # Default single zone
         }
 
         # Add building to cluster
@@ -358,7 +361,9 @@ class ConfigurationManager:
         """Generate final configuration for the environment."""
         # Collect thermal zone modules for selected buildings
         selected_thermal_zones = {}
+        selected_electrical_zones = {}
         thermal_zone_modules = self.config.get("thermal_zone_modules", {})
+        electrical_zone_modules = self.config.get("electrical_zone_modules", {})
 
         for building_id in self.selected_buildings:
             building_config = self.selected_buildings[building_id]
@@ -368,6 +373,12 @@ class ConfigurationManager:
                     selected_thermal_zones[zone_key] = self._deep_copy_dict(
                         thermal_zone_modules[zone_key]
                     )
+            for zone_id in building_config.get("electrical_zones", []):
+                zone_key = f"{building_id}.{zone_id}"
+                if zone_key in electrical_zone_modules:
+                    selected_electrical_zones[zone_key] = self._deep_copy_dict(
+                        electrical_zone_modules[zone_key]
+                    )
 
         return {
             "clusters": self.selected_clusters,
@@ -375,6 +386,7 @@ class ConfigurationManager:
             "systems": self.selected_systems,
             "controllers": self.selected_controllers,
             "thermal_zone_modules": selected_thermal_zones,
+            "electrical_zone_modules": selected_electrical_zones,
             "system_building_map": self.system_building_map,
             "building_system_map": self.building_system_map,
             "disturbances": self.selected_disturbances,

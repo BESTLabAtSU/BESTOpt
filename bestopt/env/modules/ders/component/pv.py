@@ -7,7 +7,7 @@ from enum import Enum
 import logging
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import PVState, ElectricalAction, Disturbance
+from bestopt.env.core.data_structure import PVComponentState, DERSystemAction, Disturbance
 
 
 class PVModule(BaseModule):
@@ -59,8 +59,7 @@ class PVModule(BaseModule):
         self._initialized = True
 
     def step(self,
-             state: PVState,
-             action: ElectricalAction,
+             state: PVComponentState,
              disturbance: Disturbance,
              resolution: int,
              timestep: int) -> Dict[str, Any]:
@@ -69,8 +68,8 @@ class PVModule(BaseModule):
         """
         try:
             # Get weather conditions
-            irradiance = disturbance.weather.solar_radiation  # W/m²
-            ambient_temp = disturbance.weather.outdoor_dry_bulbtemperature  # °C
+            irradiance = disturbance.weather.solar_radiation_w_m2  # W/m²
+            ambient_temp = disturbance.weather.outdoor_dry_bulb_temp  # °C
 
             # Calculate cell temperature using NOCT model
             cell_temp = self._calculate_cell_temperature(irradiance, ambient_temp)
@@ -84,20 +83,18 @@ class PVModule(BaseModule):
                 cell_temp,
                 degradation_factor
             )
-
+            # print(irradiance, cell_temp, degradation_factor, power_output)
             # Apply curtailment if requested
-            curtailment_factor = self._get_curtailment_factor(action)
+            curtailment_factor = 1
+                #self._get_curtailment_factor(action))
             power_output *= curtailment_factor
 
-            # Ensure power is within bounds
-            power_output = max(0, min(power_output, self.max_power_output))
-
             # Update state
-            state.power_generation = power_output
+            state.generation_w = power_output
             state.irradiance = irradiance
             state.cell_temperature = cell_temp
             state.efficiency = self._calculate_current_efficiency(irradiance, cell_temp)
-            state.curtailment = 1.0 - curtailment_factor
+            state.curtailment = 1.0
 
             # Update tracking metrics
             energy_kwh = (power_output / 1000) * (resolution / 3600)
@@ -229,7 +226,7 @@ class PVModule(BaseModule):
 
         return max(0, min(efficiency, 0.25))  # Cap at 25% max efficiency
 
-    def _get_curtailment_factor(self, action: ElectricalAction) -> float:
+    def _get_curtailment_factor(self, action: DERSystemAction) -> float:
         """
         Get curtailment factor from action.
 
