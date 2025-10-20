@@ -11,8 +11,6 @@ from pathlib import Path
 PROJECT_ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(PROJECT_ROOT_PATH))
 
-# Load configuration
-config_path = os.path.join(PROJECT_ROOT_PATH, "examples", "SFH_1_Building", "config_setup.json")
 cm = ConfigurationManager(config_path)
 env = BESTOptEnvironment(cm.config)
 

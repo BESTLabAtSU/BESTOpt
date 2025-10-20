@@ -105,22 +105,46 @@ class BESTOptEnvironment:
         self._validate_configuration()
         self.logger.info(f"Environment configuration finished")
 
-    def _create_thermal_zone_modules(self):
-        """Create thermal zone modules before cluster initialization."""
-        created_zones = {}  # Track which zones are created for validation
+    # Module generation
+    def _generate_components(self) -> None:
+        """Generate all components (modules, controllers, disturbances)."""
+        # Generate modules
+        buildings_config = self.config.get('buildings', {})
+        thermal_modules_to_warmup = []
+        for building_id, building_info in buildings_config.items():
+            # Process each component type in the building
+            for component_type in ['der_systems', 'hvac_systems', 'thermal_zones']:  # TODO need to be adaptive
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    instance = self._create_instance(
+                        name=component_id,
+                        config=component_config,
+                        component_type=f"{component_type}.{component_id}",
+                        must_subclass=BaseModule
+                    )
+                    if instance:
+                        self.building_modules[building_id][component_type][component_id] = instance
+                        component_path = f"{building_id}.{component_type}.{component_id}"
+                        self._create_local_controller_if_exists(component_path, instance)
+                        if component_type == 'thermal_zones':
+                            thermal_modules_to_warmup.append((building_id, component_id, instance))
 
-        for zone_key, zone_config in self.thermal_zone_modules_config.items():
-            # Validate zone key format
-            if '.' not in zone_key:
-                self.logger.error(f"Invalid zone key format: {zone_key}. Expected 'building_id.zone_id'")
-                continue
+        self._warmup_thermal_modules(thermal_modules_to_warmup)
+        # Generate controller
+        controllers_config = self.config.get('controllers', {})
+        active_controllers = self.config.get('active_controllers', {})
 
-            building_id, zone_id = zone_key.split('.', 1)  # Use maxsplit=1 in case zone_id has dots
-
-            # Verify this building exists in configuration
-            if building_id not in self.buildings_config:
-                self.logger.warning(f"Zone {zone_key} references non-existent building {building_id}")
-                continue
+        for controller_key, controller_info in controllers_config.items():
+            instance = self._create_instance(
+                name=controller_key,
+                config=controller_info,
+                component_type="controller",
+                must_subclass=BaseModule
+            )
+            if instance:
+                self.controllers[controller_key] = instance
+        if not active_controllers:
+            self.logger.warning("No active controllers assigned to buildings")
 
             instance = self._create_instance(
                 name=zone_key,
@@ -379,6 +403,83 @@ class BESTOptEnvironment:
         except Exception as e:
             self.logger.error(f"Failed to create {component_type} '{name}': {e}")
             raise
+
+    def _initialize_component_states(self) -> None:
+        """Initialize state objects for all created modules."""
+        # @TODO the current version grab init state from config,
+        # but I feel when we instance the module we already call the init function
+        # so here, we can use the simple get state function to initialize component states
+        # need to update later
+        buildings_config = self.config.get('buildings', {})
+
+        for building_id, building_info in buildings_config.items():
+            state = self.states[building_id]
+
+            # Initialize electrical component states
+            for component_type in ['der_systems']:
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    system_config = component_config.get('parameters').get('system_config')
+                    battery_config = system_config.get('bat')
+                    ev_config = system_config.get('ev')
+                    # @NOTE only module with state variable need to be initialized
+                    if battery_config is not None:
+                        state.electrical.batteries[component_id] = BatteryState(
+                            component_id=component_id,
+                            battery_soc=battery_config.get('initial_soc', 0.5)
+                        )
+
+                    if ev_config is not None:
+                        state.electrical.evs[component_id] = EVState(
+                            component_id=component_id,
+                            ev_soc=ev_config.get('initial_soc', 0.5)
+                        )
+
+            # Initialize thermal component states
+            for component_type in ['hvac_systems', 'thermal_zones', 'thermal_storage']:
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    if component_type == 'hvac_systems':
+                        state.thermal.hvac_systems[component_id] = HVACState(
+                            component_id=component_id
+                        )
+                    elif component_type == 'thermal_zones':
+                        state.thermal.thermal_zones[component_id] = BLDGTState(
+                            component_id=component_id,
+                            temperature=self.building_modules[building_id][component_type]['zone0'].initial_temp
+                        ) #@TODO replace the hard coding "zone0" later
+                    elif component_type == 'thermal_storage':
+                        tes_config = component_config.get('parameters', {})
+                        initial_temp = tes_config.get('initial_temperature', 22.0)
+                        initial_soc = tes_config.get('initial_soc', 0.5)
+                        state.thermal.thermal_storage[component_id] = TESState(
+                            component_id=component_id,
+                            temperature=initial_temp,
+                            tes_soc=initial_soc
+                        )
+
+            # Initialize water component states
+            for component_type in ['water_heaters']:
+                components = building_info.get(component_type, {})
+                for component_id, component_config in components.items():
+                    if component_type == 'water_heaters':
+                        heater_config = component_config.get('parameters', {})
+                        initial_temp = heater_config.get('initial_temperature', 60.0)
+                        state.water.water_heaters[component_id] = WaterHeaterState(
+                            component_id=component_id,
+                            tank_temperature=initial_temp
+                        )
+
+    def _validate_controller_assignments(self):
+        """Validate that controller assignments match the expected domain structure."""
+        active_controllers = self.config.get('active_controllers', {})
+
+        for building_id in self.states.keys():
+            if building_id not in active_controllers:
+                self.logger.warning(f"Building {building_id} has no domain controllers assigned")
+            else:
+                domains_assigned = list(active_controllers[building_id].keys())
+                self.logger.info(f"Building {building_id} has controllers for domains: {domains_assigned}")
 
     @staticmethod
     def _import_class(class_path: str, must_subclass: Optional[type] = None):

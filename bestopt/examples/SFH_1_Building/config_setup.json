@@ -57,12 +57,26 @@
           }
         }
       },
-      "components": {},
-      "class_path": "bestopt.env.modules.hvac.system.FCU.FCUModule",
-      "supported_buildings": [
-        "SFH_1"
-      ],
-      "controller_id": "hvac_controller_1"
+      "der_systems": {
+        "pv_bat_ev": {
+          "parameters": {
+            "system_config": {
+              "pv": {
+                "rated_capacity_kW": 2
+              },
+              "bat": {
+                "rated_capacity_kWh": 5,
+                "initial_soc": 0.3
+              },
+              "ev": {
+                "rated_capacity_kWh": 5,
+                "initial_soc": 0.3
+              }
+            }
+          },
+          "class_path": "bestopt.env.modules.ders.system.der.DERModule"
+        }
+      }
     }
   },
   "controllers": {
@@ -84,6 +98,27 @@
         "heating_power_max": 4000.0
       },
       "class_path": "bestopt.env.controllers.thermal.SupervisoryController"
+    },
+    "SFH_1_electrical_SFH_1_ELECTRIC_Supervisory": {
+      "parameters": {
+        "domain": "electrical",
+        "type": "rule-based",
+        "mode": "self_consumption",
+        "system_config": {
+          "pv": {
+            "rated_capacity_kW": 2
+          },
+          "bat": {
+            "rated_capacity_kWh": 5,
+            "initial_soc": 0.3
+          },
+          "ev": {
+            "rated_capacity_kWh": 5,
+            "initial_soc": 0.3
+          }
+        }
+      },
+      "class_path": "bestopt.env.controllers.electrical.SupervisoryController"
     }
   },
   "thermal_zone_modules": {
@@ -121,7 +156,8 @@
   },
   "building_system_map": {
     "SFH_1": {
-      "thermal": "hvac_system_1"
+      "thermal": "SFH_1_thermal_SFH_1_THERMAL_Supervisory",
+      "electrical": "SFH_1_electrical_SFH_1_ELECTRIC_Supervisory"
     }
   },
   "disturbances": {

@@ -80,6 +80,13 @@ class HVACMode(Enum):
     AUTO = "auto"
     ECONOMIZER = "economizer"
 
+class PowerFlowPriority(Enum):
+    """Priority modes for power flow management"""
+    COST_MINIMIZATION = "cost_min"
+    SELF_CONSUMPTION = "self_consumption"
+    PEAK_SHAVING = "peak_shaving"
+    BACKUP_PRIORITY = "backup_priority"
+
 
 class PowerFlowMode(Enum):
     """Electrical power flow modes."""
@@ -443,8 +450,23 @@ class DERSystemState(SystemState):
 
 
 @dataclass
-class BuildingSystemState(SystemState):
-    """Building system state spanning all domains."""
+class ElectricalAction:
+    """Electrical control actions."""
+    pv2building: float = 0.0
+    pv2battery: float = 0.0
+    pv2ev: float = 0.0
+    pv2grid: float = 0.0
+    battery2building: float = 0.0
+    battery2ev: float = 0.0
+    battery2grid: float = 0.0
+    ev2building: float = 0.0
+    ev2grid: float = 0.0
+    grid2building: float = 0.0
+    grid2battery: float = 0.0
+    grid2ev: float = 0.0
+    # @TODO Battery control
+    # @TODO PV control
+    # @TODO EV control
 
     def __init__(self, system_id: str):
         super().__init__(
@@ -495,10 +517,15 @@ class FanComponentAction(ComponentAction):
 
 
 @dataclass
-class CoilComponentAction(ComponentAction):
-    """Coil control action."""
-    valve_position: float = 0.0  # 0-1
-    water_flow_setpoint_m3s: Optional[float] = None
+class OccupancyData:
+    """Occupancy and comfort requirements."""
+    occupancy_count: int = 0
+    step_of_day: int = 0
+    occupancy_fraction: float = 0.0  # 0-1
+    _is_ev_connected: float = 0.0   # EV status 0-1
+    comfort_temp_min: float = 20.0  # °C
+    comfort_temp_max: float = 26.0  # °C
+    # @TODO add behavior variables later
 
     def __post_init__(self):
         self.component_type = "COIL"

@@ -70,7 +70,7 @@ class PVModule(BaseModule):
         try:
             # Get weather conditions
             irradiance = disturbance.weather.solar_radiation  # W/m²
-            ambient_temp = disturbance.weather.outdoor_dry_bulb_temp  # °C
+            ambient_temp = disturbance.weather.outdoor_dry_bulbtemperature  # °C
 
             # Calculate cell temperature using NOCT model
             cell_temp = self._calculate_cell_temperature(irradiance, ambient_temp)
