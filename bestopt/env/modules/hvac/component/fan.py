@@ -4,13 +4,13 @@ Ideal HVAC module.
 
 from typing import Dict, Any
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, FanState, Action, HVACLocalAction  
+from bestopt.env.core.data_structure import FanComponentAction, FanComponentState
 
 class FanModule(BaseModule):
     """
     Supply fan module that CONSUMES an airflow setpoint and UPDATES a FanState in place.
 
-    Input (from action): HVACLocalAction.fan_supply_air_flow_rate [m^3/s]
+    Input (from action): ThermalAction.fan_supply_air_flow_rate [m^3/s]
 
     Output (written in-place to FanState):
     - state.flow_m3s
@@ -48,10 +48,10 @@ class FanModule(BaseModule):
 
     def step(
         self,
-        state: "FanState",
-        action: "HVACLocalAction",  
+        state: "FanComponentState",
+        action: "FanComponentAction",
         timestep: float
-    ) -> FanState:
+    ) -> FanComponentState:
         """
         One step (SI):
           - read airflow setpoint [m^3/s]
@@ -61,7 +61,7 @@ class FanModule(BaseModule):
         """
         
         # 1) airflow setpoint [m^3/s]
-        sp = action.fan_supply_air_flow_rate
+        sp = action.airflow_setpoint_m3s
 
         flow = 0.0 if sp is None else float(sp)
         if flow < 0.0:

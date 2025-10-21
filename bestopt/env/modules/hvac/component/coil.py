@@ -3,7 +3,7 @@
 
 from typing import Dict, Any
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import CoilState, Disturbance  # action is unused here
+from bestopt.env.core.data_structure import CoilComponentState, Disturbance  # action is unused here
 
 class CoilModule(BaseModule):
     """
@@ -61,17 +61,17 @@ class CoilModule(BaseModule):
 
     def step(
         self,
-        state: "CoilState",
+        state: "CoilComponentState",
         action: Any,                      # not used
         timestep: float
-    ) -> CoilState:
+    ) -> CoilComponentState:
         """Compute outlet temps from inlet temps and flows; write in-place to state."""
 
         # 0) Inputs (do NOT modify)
         Va = float(getattr(state, "airflow_m3s", 0.0))          # [m^3/s]
         Vw = float(getattr(state, "waterflow_m3s", 0.0))        # [m^3/s]
-        Ta_in = float(getattr(state, "air_inlet_temp_C", 0.0))  # [°C]
-        Tw_in = float(getattr(state, "water_inlet_temp_C", 0.0))# [°C]
+        Ta_in = float(getattr(state, "air_inlet_temp_c", 0.0))  # [°C]
+        Tw_in = float(getattr(state, "water_inlet_temp_c", 0.0))# [°C]
 
         # 1) Capacity rates: C = m_dot * cp  →  [W/K]
         mdot_air = max(0.0, Va) * self.rho_air                  # [kg/s]
@@ -81,8 +81,8 @@ class CoilModule(BaseModule):
 
         # No flow or no driving ΔT → no heat transfer
         if C_air <= 1e-9 or C_wat <= 1e-9 or Ta_in == Tw_in:
-            state.air_outlet_temp_C = Ta_in
-            state.water_outlet_temp_C = Tw_in
+            state.air_outlet_temp_c = Ta_in
+            state.water_outlet_temp_c = Tw_in
             state.Q_W = 0.0
             self._record_state({"Ta_out": Ta_in, "Tw_out": Tw_in, "Q_W": 0.0})
             return state
@@ -111,17 +111,17 @@ class CoilModule(BaseModule):
 
         # 5) Map back to air/water
         if hot_side == "air":
-            state.air_outlet_temp_C = Th_out
-            state.water_outlet_temp_C = Tc_out
+            state.air_outlet_temp_c = Th_out
+            state.water_outlet_temp_c = Tc_out
         else:
-            state.water_outlet_temp_C = Th_out
-            state.air_outlet_temp_C = Tc_out
+            state.water_outlet_temp_c = Th_out
+            state.air_outlet_temp_c = Tc_out
 
         state.Q_W = Q_W
 
         self._record_state({
             "Ta_in": Ta_in, "Tw_in": Tw_in,
-            "Ta_out": state.air_outlet_temp_C, "Tw_out": state.water_outlet_temp_C,
+            "Ta_out": state.air_outlet_temp_c, "Tw_out": state.water_outlet_temp_c,
             "Q_W": Q_W, "eps": eps
         })
         return state

@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import os
 import pandas as pd
 from ..core.base import BaseModule
-from ..core.data_structure import WeatherData
+from ..core.data_structure import WeatherDisturbance
 
 REQUIRED_COLS_CSV = {"outdoor_temperature", "solar_radiation"}
 
@@ -21,7 +21,7 @@ class WeatherModule(BaseModule):
     def __init__(self, config: Dict[str, Any], name: str = "Weather"):
         super().__init__(config, name)
         self.weather_data: Optional[pd.DataFrame] = None
-        self.current_weather = WeatherData()
+        self.current_weather = WeatherDisturbance()
         self.current_timestep = 0
         # @TODO for future large scale evaluation
         self.location = config.get("location", "Syracuse, NY")
@@ -44,10 +44,10 @@ class WeatherModule(BaseModule):
             self.weather_data = None
 
         # Initialize current weather
-        self.current_weather = WeatherData(outdoor_dry_bulbtemperature=0.0, outdoor_wet_bulb_temperature = 0.0, solar_radiation=0.0)
+        self.current_weather = WeatherDisturbance(outdoor_dry_bulb_temp=0.0, outdoor_wet_bulb_temp = 0.0, solar_radiation_w_m2=0.0)
         self.logger.info(f"Weather module initialized: {self.name}")
 
-    def step(self, current_step: int) -> Optional[WeatherData]:
+    def step(self, current_step: int) -> Optional[WeatherDisturbance]:
         self.current_timestep = current_step
 
         if self.weather_data is None or self.weather_data.empty:
@@ -111,7 +111,7 @@ class WeatherModule(BaseModule):
         else:
             raise ValueError(f"Unsupported weather file format: {file_path}")
 
-    def _get_weather_from_data(self, current_step: int) -> WeatherData:
+    def _get_weather_from_data(self, current_step: int) -> WeatherDisturbance:
         self.weather_data['Time'] = pd.to_datetime(self.weather_data['Time'])
         sim_start = pd.Timestamp("2023-08-01 00:00:00")
         sim_data = self.weather_data[self.weather_data['Time'] >= sim_start]
@@ -120,23 +120,27 @@ class WeatherModule(BaseModule):
         # @TODO need to seperate dry/wet bulb temperature later
         # also need to update the data format process
         sr = float(row["solar_radiation"])
-        return WeatherData(outdoor_dry_bulbtemperature=ot, outdoor_wet_bulb_temperature = ot, solar_radiation=sr)
+        return WeatherDisturbance(
+            outdoor_dry_bulb_temp=ot,
+            outdoor_wet_bulb_temp=ot,
+            solar_radiation_w_m2=sr
+        )
 
     def reset(self) -> None:
         self.current_timestep = 0
-        self.current_weather = WeatherData(outdoor_dry_bulbtemperature=0, outdoor_wet_bulb_temperature=0, solar_radiation=0)
+        self.current_weather = WeatherDisturbance(outdoor_dry_bulb_temp=0, outdoor_wet_bulb_temp=0, solar_radiation_w_m2=0)
         self.logger.debug(f"Reset weather module: {self.name}")
 
     def get_state(self) -> Dict[str, Any]:
         return {
             "current_timestep": self.current_timestep,
-            "outdoor_dry_bulbtemperature": self.current_weather.outdoor_dry_bulbtemperature,
-            "outdoor_wet_bulb_temperature": self.current_weather.outdoor_wet_bulb_temperature,
-            "solar_radiation": self.current_weather.solar_radiation,
+            "outdoor_dry_bulbtemperature": self.current_weather.outdoor_dry_bulb_temp,
+            "outdoor_wet_bulb_temperature": self.current_weather.outdoor_wet_bulb_temp,
+            "solar_radiation_w_m2": self.current_weather.solar_radiation_w_m2,
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         self.current_timestep = int(state.get("current_timestep", 0))
-        self.current_weather.outdoor_dry_bulbtemperature = float(state.get("outdoor_dry_bulbtemperature", 0.0))
-        self.current_weather.outdoor_wet_bulb_temperature = float(state.get("outdoor_wet_bulb_temperature", 0.0))
-        self.current_weather.solar_radiation = float(state.get("solar_radiation", 0.0))
+        self.current_weather.outdoor_dry_bulb_temp = float(state.get("outdoor_dry_bulbtemperature", 0.0))
+        self.current_weather.outdoor_wet_bulb_temp = float(state.get("outdoor_wet_bulb_temperature", 0.0))
+        self.current_weather.solar_radiation_w_m2 = float(state.get("solar_radiation_w_m2", 0.0))
