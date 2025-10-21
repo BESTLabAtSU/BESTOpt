@@ -43,7 +43,7 @@ cm.add_thermal_zone_module(
             "testday": 1,
             "datapath": os.path.join(PROJECT_ROOT_PATH, "data", "SFH", "BLDG", "clean", "SFH_1.csv"),
             "temp_unit": "C",
-            "device": "cuda:0",
+            "device": "cpu",
             "save_name": "SFH_1"
         },
         "model_path": os.path.join(PROJECT_ROOT_PATH, "examples", "Saved", "SFH_1",
@@ -81,8 +81,7 @@ cm.add_system(
         "system_name": "FCU System",
         "system_config": {
             "fan": {"rated_flow_m3s": 1, "rated_power_W": 1000},
-            "fan_ctrl": {"ctrl_type": "linear"},
-            "coil": {"epsilon": 0.8},
+            "fan_ctrl": {"ctrl_type": "staged"},
             "pump": {"rated_flow_m3s": 0.005, "rated_power_W": 500},
             "chiller": {"rated_capacity_W": 3500, "rated_cop": 4.5},
             "tower": {

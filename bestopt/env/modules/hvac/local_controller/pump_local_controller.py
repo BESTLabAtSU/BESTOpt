@@ -2,8 +2,8 @@ from typing import Dict, Any, Optional
 from math import inf
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import ThermalAction, HVACLocalAction, ThermalDomainState
-from bestopt.env.core.constants import WATER_DENSITY, WATER_SPECIFIC_HEAT, AIR_DENSITY, AIR_SPECIFIC_HEAT
+from bestopt.env.core.data_structure import HVACSystemAction, HVACSystemState, PumpComponentAction, ComponentType
+from bestopt.env.core.constants import WATER_DENSITY, WATER_SPECIFIC_HEAT
 
 
 class PumpLocalController(BaseModule):
@@ -19,12 +19,14 @@ class PumpLocalController(BaseModule):
         - ThermalAction.thermal_load [W] 
 
     Output:
-        - HVACLocalAction.pump_flowrate [m^3/s] = thermal_load / (delta_T * rho * cp)
+        - ThermalAction.pump_flowrate [m^3/s] = thermal_load / (delta_T * rho * cp)
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "PumpLocalController"):
         super().__init__(config, name)
         self.delta_T: float = float(config.get("delta_T", 5.0))  # K
+        self.coil_effectiveness: float = float(config.get("coil_effectiveness", 0.8))
+        self.Tcw_sp: float = float(config.get("Tcw_setpoint", 5))   # C
         # if self.delta_T <= 0:
         #     raise ValueError("delta_T must be a positive number.")
 
@@ -39,10 +41,10 @@ class PumpLocalController(BaseModule):
 
     def step(
         self,
-        state: ThermalDomainState,
-        action: ThermalAction,
+        state: HVACSystemState,
+        action: HVACSystemAction,
         timestep: float
-    ) -> HVACLocalAction:
+    ) -> PumpComponentAction:
         """
         Compute local pump command and return a local-controller action.
 
@@ -51,25 +53,25 @@ class PumpLocalController(BaseModule):
             timestep (float): Current timestep [s].
 
         Returns:
-            HVACLocalAction: The computed pump flowrate command.
+            ThermalAction: The computed pump flowrate command.
         """
-        # this is why I am thinking we also need to pass an 'ID' like parameters later when extend to multizone building
-        return_air_temp = state.thermal_zones["zone0"].temperature
         #@ TODO I use flowrate and temperature setpoint here to estimate thermal demand, is it OK?
-        thermal_load = AIR_DENSITY * action.supervisory_supply_air_flow_rate * AIR_SPECIFIC_HEAT * (action.supervisory_supply_air_temperature - return_air_temp)
-
         # Calculate required flowrate
-        # pump_flowrate = abs(thermal_load / (self.delta_T * WATER_DENSITY * WATER_SPECIFIC_HEAT))
+        #@ TODO should delta T update across time
+        # pump_flowrate = abs(action.hvac_thermal_load_demand / (self.delta_T * WATER_DENSITY * WATER_SPECIFIC_HEAT))
 
-        pump_flowrate = abs(thermal_load / (0.8 * (return_air_temp - 5) * WATER_DENSITY * WATER_SPECIFIC_HEAT))
+        pump_flowrate = abs(action.hvac_thermal_load_demand / (self.coil_effectiveness * (24 - self.Tcw_sp) * WATER_DENSITY * WATER_SPECIFIC_HEAT))
 
         # Enforce maximum limit
         pump_flowrate = min(pump_flowrate, self.pump_flowrate_max)
 
         self.current_flowrate = pump_flowrate
 
-        local_action = HVACLocalAction()
-        local_action.pump_flowrate = pump_flowrate
+        local_action = PumpComponentAction(
+            component_id=state.system_id,
+            component_type=ComponentType.PUMP.value
+        )
+        local_action.flow_setpoint_m3s = pump_flowrate
 
         # Optionally record state for debugging/monitoring
         # self._record_state({
