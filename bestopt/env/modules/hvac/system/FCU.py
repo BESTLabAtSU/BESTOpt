@@ -152,7 +152,7 @@ class FCUModule(BaseModule):
         self.fan.step(fan_state, fan_local_cmd, timestep)
 
         # === 3. Pump control (local) ===
-        pump_local_cmd = self.pump_ctrl.step(state, action, timestep)
+        pump_local_cmd = self.pump_ctrl.step(coil_state, action, timestep)
 
         # === 4. Pump step ===
         self.pump.step(pump_state, pump_local_cmd, timestep)
