@@ -1,7 +1,8 @@
 """
-Unit test for HeatPumpModule (no pytest, Jupyter-safe)
+Unit test for HeatPumpModule (pure unittest, Jupyter-safe)
 """
-#%%
+
+#%% Imports
 import sys, os, unittest
 from types import SimpleNamespace
 from math import isclose
@@ -9,11 +10,11 @@ from math import isclose
 # --- Ensure project root is visible to Python ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
 
-# --- Correct import ---
+# --- Import target module ---
 from bestopt.env.modules.hvac.component.heat_pump import HeatPumpModule
 
 
-# --- Minimal stubs ---
+# --- Minimal stubs for data structures ---
 class HVACMode:
     OFF = SimpleNamespace(value="OFF")
     HEATING = SimpleNamespace(value="HEATING")
@@ -45,7 +46,7 @@ class HVACSystemAction:
         self.mode = mode
 
 
-# --- Tests ---
+# --- Test Suite ---
 class TestHeatPumpModule(unittest.TestCase):
     def setUp(self):
         config = {
@@ -58,15 +59,19 @@ class TestHeatPumpModule(unittest.TestCase):
         }
         self.hp = HeatPumpModule(config)
 
-        # Inject artificial, temperature-sensitive performance curves
-        # CAPFT (capacity modifier vs temperature)
-        # EIRFT (inverse COP modifier vs temperature)
-        # These polynomial coefficients are used in DOE/ASHRAE format:
-        # f(x, y) = a + b*x + c*x^2 + d*y + e*y^2 + f*x*y
-        # Here we only make the 4th term depend on source temperature.
-        self.hp.cap_ft = [1.0, 0.0, 0.0, 0.015, 0.0, 0.0]   # CAP increases ~1.5% per 10°C source temp
-        self.hp.eir_ft = [1.0, 0.0, 0.0, -0.01, 0.0, 0.0]   # EIR decreases ~1% per 10°C source temp
+        # --- Inject temperature-sensitive performance curves ---
+        # Heating mode: better performance with warmer source
+        self.hp.CAPFT_coeffs_heating = [1.0, 0.0, 0.0, 0.01, 0.0, 0.0]  # +1% per 10°C source rise
+        self.hp.EIRFT_coeffs_heating = [1.0, 0.0, 0.0, -0.01, 0.0, 0.0] # -1% per 10°C source rise
+        self.hp.EIRFPLR_coeffs_heating = [1.0, 0.0, 0.0]
 
+        # Cooling mode: worse performance with warmer source
+        self.hp.CAPFT_coeffs_cooling = [1.0, 0.0, 0.0, -0.01, 0.0, 0.0] # -1% per 10°C source rise
+        self.hp.EIRFT_coeffs_cooling = [1.0, 0.0, 0.0, 0.01, 0.0, 0.0]  # +1% per 10°C source rise
+        self.hp.EIRFPLR_coeffs_cooling = [1.0, 0.0, 0.0]
+
+
+    # --- Basic behavior tests ---
     def test_heating_mode(self):
         state = HeatPumpComponentState()
         action = HeatPumpComponentAction()
@@ -78,6 +83,7 @@ class TestHeatPumpModule(unittest.TestCase):
         self.assertGreater(result.power_W, 0.0)
         self.assertGreater(result.cop, 0.0)
         self.assertTrue(isclose(result.cop, 4.0, rel_tol=0.5))
+
 
     def test_cooling_mode(self):
         state = HeatPumpComponentState()
@@ -93,6 +99,7 @@ class TestHeatPumpModule(unittest.TestCase):
         self.assertGreater(result.cop, 0.0)
         self.assertTrue(isclose(result.cop, 3.5, rel_tol=0.5))
 
+
     def test_off_mode(self):
         state = HeatPumpComponentState()
         action = HeatPumpComponentAction()
@@ -103,6 +110,7 @@ class TestHeatPumpModule(unittest.TestCase):
         self.assertEqual(result.thermal_output_W, 0.0)
         self.assertEqual(result.power_W, 0.0)
         self.assertEqual(result.cop, 0.0)
+
 
     def test_reset_and_initialize(self):
         state = HeatPumpComponentState()
@@ -117,14 +125,14 @@ class TestHeatPumpModule(unittest.TestCase):
         self.hp.initialize(state)
         self.assertEqual(state.thermal_output_W, 0.0)
 
+
+    # --- Performance trend test ---
     def test_cop_vs_source_temp(self):
         """Parametric test: COP should change predictably with source temperature."""
-
         temps = [0, 10, 20, 30, 40]  # °C source inlet temperatures
-        cops_heating = []
-        cops_cooling = []
+        cops_heating, cops_cooling = [], []
 
-        # --- HEATING MODE ---
+        # HEATING MODE
         for T in temps:
             state = HeatPumpComponentState()
             state.source_inlet_temp_C = T
@@ -133,7 +141,7 @@ class TestHeatPumpModule(unittest.TestCase):
             result = self.hp.step(state, action, sys_action)
             cops_heating.append(result.cop)
 
-        # --- COOLING MODE ---
+        # COOLING MODE
         for T in temps:
             state = HeatPumpComponentState()
             state.load_inlet_temp_C = 12.0
@@ -143,16 +151,13 @@ class TestHeatPumpModule(unittest.TestCase):
             result = self.hp.step(state, action, sys_action)
             cops_cooling.append(result.cop)
 
-        # --- EXPECTED TRENDS ---
-        # In heating mode, COP should increase as source gets warmer
+        # Expected trends
         self.assertGreater(cops_heating[-1], cops_heating[0],
-                        msg=f"COP(40°C)={cops_heating[-1]:.2f} should be higher than COP(0°C)={cops_heating[0]:.2f}")
-
-        # In cooling mode, COP should decrease as source gets warmer
+            msg=f"COP(40°C)={cops_heating[-1]:.2f} should be higher than COP(0°C)={cops_heating[0]:.2f}")
         self.assertLess(cops_cooling[-1], cops_cooling[0],
-                        msg=f"COP(40°C)={cops_cooling[-1]:.2f} should be lower than COP(0°C)={cops_cooling[0]:.2f}")
+            msg=f"COP(40°C)={cops_cooling[-1]:.2f} should be lower than COP(0°C)={cops_cooling[0]:.2f}")
 
-        # Optional: print trend for debugging
+        # Debug printout
         print("\nHeating COP trend vs Source Temp:")
         for T, cop in zip(temps, cops_heating):
             print(f"  Source {T:>2}°C → COP {cop:.3f}")
@@ -160,6 +165,7 @@ class TestHeatPumpModule(unittest.TestCase):
         print("\nCooling COP trend vs Source Temp:")
         for T, cop in zip(temps, cops_cooling):
             print(f"  Source {T:>2}°C → COP {cop:.3f}")
+
 
 # --- Entry point (Jupyter/IPython safe) ---
 if __name__ == "__main__":
