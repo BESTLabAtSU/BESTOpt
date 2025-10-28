@@ -353,9 +353,10 @@ class IceTankComponentState(ComponentState):
 class PVComponentState(ComponentState):
     """PV component state."""
     generation_w: float = 0.0
-    available_w: float = 0.0
-    curtailed_w: float = 0.0
-    efficiency: float = 0.15
+    cell_temperature_c: float = 0.0
+    degradation_factor: float = 0.0
+    efficiency: float = 0.0
+    losses: float = 0.0
 
     def __post_init__(self):
         self.component_type = ComponentType.PV
