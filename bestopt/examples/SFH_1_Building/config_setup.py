@@ -218,7 +218,7 @@ cm.add_disturbance(
 cm.add_environment(
     parameters={
         "resolution": 900,  # 15 minutes
-        "duration": 86400 * 3,  # 3 days
+        "duration": 86400,  # 3 days
         "enable_history": True,
         "logging_level": "INFO",
         "simulation_start_time": "2023-08-01 00:00:00",

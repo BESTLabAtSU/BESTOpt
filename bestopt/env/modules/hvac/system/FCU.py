@@ -153,7 +153,8 @@ class FCUModule(BaseModule):
 
         # === 3. Pump control (local) ===
         pump_local_cmd = self.pump_ctrl.step(coil_state, action, timestep)
-
+        # pump_local_cmd = self.pump_ctrl.step(coil_state, action, fan_local_cmd, timestep)
+        
         # === 4. Pump step ===
         self.pump.step(pump_state, pump_local_cmd, timestep)
 
@@ -223,14 +224,15 @@ class FCUModule(BaseModule):
         self.CHW_flow_actual_m3s = pump_state.waterflow_m3s
         self.FCU_power_total_W = power_total_W
         self.FCU_energy_cumulative_J = energy_total_J
-
+        self.CHW_supply_temp_C = chiller_state.chws_temp_c
 
         return {
             "Q_zone_actual_W": self.Q_zone_actual_W,
             "SAT_actual_C": self.SAT_actual_C,
             "SA_flow_actual_m3s": self.SA_flow_actual_m3s,
             "CHW_flow_actual_m3s": self.CHW_flow_actual_m3s,
-            "CHW_supply_temp_C": chiller_state.chws_temp_c,
+            "CHW_supply_temp_C":  self.CHW_supply_temp_C,
+            "CHW_return_temp_C": chiller_state.chwr_temp_c,
             "FCU_power_total_W": power_total_W,
             "FCU_fan_power_W": fan_state.power_W,
             "FCU_pump_power_W": pump_state.power_W,
@@ -246,6 +248,7 @@ class FCUModule(BaseModule):
             "SA_flow_actual_m3s": 0.0,
             "CHW_flow_actual_m3s": 0.0,
             "CHW_supply_temp_C": 7.0,
+            "CHW_return_temp_C": 12.0,
             "FCU_power_total_W": 0.0,
             "FCU_fan_power_W": 0.0,
             "FCU_pump_power_W": 0.0,

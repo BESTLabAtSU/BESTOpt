@@ -244,7 +244,7 @@
   "environment": {
     "parameters": {
       "resolution": 900,
-      "duration": 259200,
+      "duration": 86400,
       "enable_history": true,
       "logging_level": "INFO",
       "simulation_start_time": "2023-08-01 00:00:00"
