@@ -72,7 +72,8 @@ class SupervisoryController(BaseModule):
 
     def step(self,
              state: DomainState,
-             observation: ClusterObservation,
+             # observation: ClusterObservation,
+             observation: Any, #@todo the building and system need to be properly managed in observation follow standard format, just use simplfied format for now
              disturbance: Disturbance,
              timestep: float) -> DERSystemAction:
         """
@@ -82,14 +83,16 @@ class SupervisoryController(BaseModule):
         distributing commands proportionally.
         """
         try:
-            building_load = self._get_building_load(state)/1000 #kw
-            pv_generation = self._get_pv_generation(state)/1000 #kw
-            DER_state = state['der_system_1'].components
+            system_state, building_state = observation
+            building_load = self._get_building_load(building_state)/1000 #kw
+            pv_generation = self._get_pv_generation(system_state)/1000 #kw
+            DER_state = system_state.components
+
             # Get control signals
             is_peak = self._is_peak_period(disturbance)
             self.grid_connected = self._get_grid_status(disturbance)
             action = DERSystemAction(
-                system_id=state['der_system_1'].system_id,
+                system_id=system_state.system_id,
                 system_type=SystemType.DER.value)
 
             action = self.tou_control(
@@ -164,11 +167,11 @@ class SupervisoryController(BaseModule):
         return configs
 
     def _get_building_load(self, state: Any) -> float:
-        building_load = state['SFH_1_building'].components['electrical'].building_power_w
+        building_load = state.components['electrical'].building_power_w
         return building_load  # Default fallback
 
     def _get_pv_generation(self, state: Any) -> float:
-        pv_generation = state['der_system_1'].components['pv_1'].generation_w
+        pv_generation = state.components['pv_1'].generation_w
         return pv_generation
 
 

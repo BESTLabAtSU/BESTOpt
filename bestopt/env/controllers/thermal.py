@@ -62,23 +62,27 @@ class SupervisoryController(BaseModule):
             ThermalAction with control commands
         """
         try:
-            current_temp = 22.0  # Default
-
-            if observation and hasattr(observation, 'thermal'):
-                thermal_obs = observation.thermal
-                if hasattr(thermal_obs, 'aggregated_metrics'):
-                    zone_temps = thermal_obs.aggregated_metrics.get('zone_temperatures', {})
-
-                    if zone_temps:
-                        temp_values = list(zone_temps.values())
-                        current_temp = sum(temp_values) / len(temp_values)
-                        self.logger.debug(f"Zone temperatures: {zone_temps}")
-                        self.logger.debug(f"Using average temperature: {current_temp:.2f}°C")
-                    else:
-                        self.logger.warning("No zone temperatures in observation")
-
+            # current_temp = 22.0  # Default
+            #
+            # if observation and hasattr(observation, 'thermal'):
+            #     thermal_obs = observation.thermal
+            #     if hasattr(thermal_obs, 'aggregated_metrics'):
+            #         zone_temps = thermal_obs.aggregated_metrics.get('zone_temperatures', {})
+            #
+            #         if zone_temps:
+            #             temp_values = list(zone_temps.values())
+            #             current_temp = sum(temp_values) / len(temp_values)
+            #             self.logger.debug(f"Zone temperatures: {zone_temps}")
+            #             self.logger.debug(f"Using average temperature: {current_temp:.2f}°C")
+            #         else:
+            #             self.logger.warning("No zone temperatures in observation")
+            #@TODO need to write an observation function to translate state to obs, not only for thermal, but for other domain as well
+            system_state, building_state = observation
             # Determine active setpoints based on occupancy
             cooling_setpoint, heating_setpoint = self._get_active_setpoints(disturbance, self.precool_config)
+
+            # @todo it can be updated to handle multizones temp later, this is a better way to do it
+            current_temp = self._get_building_temp(building_state)
 
             supply_air_flow_rate, supply_air_temperature = self._supervisory(
                 current_temp=current_temp,
@@ -116,6 +120,10 @@ class SupervisoryController(BaseModule):
                 system_id=state.system_id,
                 system_type=SystemType.HVAC.value
             )
+
+    def _get_building_temp(self, state: Any) -> float:
+        building_temp = state.components['zone0'].temperature #adjust this function later for more zones
+        return building_temp
 
     def _get_active_setpoints(self, disturbance, precool_config) -> tuple:
         """Determine active setpoints based on occupancy and schedule."""
