@@ -80,14 +80,19 @@ cm.add_system(
     parameters={
         "system_name": "FCU System",
         "system_config": {
-            "fan": {"rated_flow_m3s": 1, "rated_power_W": 1000},
-            "fan_ctrl": {"ctrl_type": "staged"},
-            "pump": {"rated_flow_m3s": 0.005, "rated_power_W": 500},
-            "chiller": {"rated_capacity_W": 3500, "rated_cop": 4.5},
+            "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000}, 
+            "fan_ctrl": {"ctrl_type": "staged", "stages": 10, "rated_flow_m3s": 1},
+            # "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000}, 
+            # "fan_ctrl": {"ctrl_type": "vfd", "rated_flow_m3s": 1},
+            # "fan": {"rated_flow_m3s": 0.4, "rated_power_W": 0.4 * 1000},
+            # "fan_ctrl": {"ctrl_type": "constant", "rated_flow_m3s": 0.4},
+            "coil": {"effectiveness": 0.7},
+            "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 1500},
+            "chiller": {"rated_capacity_W": 15000, "rated_cop": 4.5},
             "tower": {
-                "rated_capacity_W": 3500,
-                "rated_fan_power_W": 2000,
-                "pump_power_per_flow": 1800,
+                "rated_capacity_W": 15000,
+                "rated_fan_power_W": 400,
+                "pump_power_per_flow": 85000,
                 "min_approach_C": 3.0,
                 "max_approach_C": 7.0
             }

@@ -211,7 +211,7 @@ class HVACDashboard:
         wf_all = np.array(self.water_flow_real, float)
         if wf_all.size and not np.all(np.isnan(wf_all)):
             wfmax = np.nanmax(wf_all)
-            self.ax6.set_ylim(0.0, max(wfmax * 1.2, 0.05))  # >= 0.05 m³/s top
+            self.ax6.set_ylim(0.0, max(wfmax * 1.2, 0.005))  # >= 0.05 m³/s top
 
         # Chiller Supply Water Temperature (new)
         swt_all = np.array(self.chiller_supply_water_temps, float)
