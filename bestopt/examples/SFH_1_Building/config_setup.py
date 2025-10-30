@@ -104,8 +104,8 @@ cm.add_system(
     parameters={
         "system_name": "PV-Battery-EV System",
         "system_config": {
-            "pv": {"rated_capacity_kW": 2},
-            "bat": {"rated_capacity_kWh": 10,
+            "pv": {"rated_capacity_kW": 10},
+            "bat": {"rated_capacity_kWh": 5,
                     "initial_soc": 0.3,
                     "charge_speed":0.25,
                     "discharge_speed":0.5,
@@ -113,7 +113,7 @@ cm.add_system(
             "evs": [
                 {
                     "id": "ev_tesla",
-                    "rated_capacity_kWh": 75,
+                    "rated_capacity_kWh": 60,
                     "initial_soc": 0.2,
                     "charge_speed":0.25,
                     "discharge_speed":0.5,

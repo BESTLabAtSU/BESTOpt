@@ -2,7 +2,7 @@
 # HVAC Single-Building Dashboard (with Water Flow & Chiller SWT)
 # ------------------------------------------------------------
 import matplotlib
-matplotlib.use("QtAgg")  # Change to "Agg" if running headless
+# matplotlib.use("QtAgg")  # Uncomment for interactive display
 import matplotlib.pyplot as plt
 import numpy as np
 from collections import deque

@@ -71,7 +71,7 @@ def run_multi_building():
     # Create multi-building dashboard
     plotter = create_multi_dashboard(
         building_names=building_names,
-        max_points=96 * 2,
+        max_points=96 * 1,
         save_gif=True,
         gif_filename="hvac_simulation.gif"
     )

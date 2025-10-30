@@ -70,9 +70,6 @@ class BESTOptEnvironment:
         self.system_building_map = self.config.get('system_building_map', {})
         self.building_system_map = self.config.get('building_system_map', {})
 
-        if not self.buildings_config:
-            raise ValueError("No buildings configured in environment")
-
         # Initialize cluster states
         self.cluster_states: Dict[str, ClusterState] = {}
         self.cluster_actions: Dict[str, ClusterAction] = {}
@@ -93,7 +90,7 @@ class BESTOptEnvironment:
         self.electrical_zone_modules: Dict[str, BaseModule] = {}
         self.disturbance_modules: Dict[str, BaseModule] = {}
 
-        # Build runtime environment with proper order
+        # Build runtime environment
         self._create_thermal_zone_modules()  # Create thermal modules
         self._warmup_thermal_modules()  # Warmup for ModNN encoder
         self._create_electrical_zone_modules()  # Create thermal modules
@@ -184,7 +181,8 @@ class BESTOptEnvironment:
                 if building_id not in created_zones:
                     created_zones[building_id] = []
                 created_zones[building_id].append(zone_id)
-                self.logger.debug(f"Created electrical zone module: {zone_key} (Building: {building_id}, Zone: {zone_id})")
+                self.logger.debug(
+                    f"Created electrical zone module: {zone_key} (Building: {building_id}, Zone: {zone_id})")
 
         # Validate all configured zones have modules
         for building_id, building_config in self.buildings_config.items():
@@ -535,6 +533,9 @@ class BESTOptEnvironment:
                         if state.system_type == SystemType.HVAC]
 
         for system_id in hvac_systems:
+            # Find the building that system support
+            # @todo use get function later
+            building_id = f"{self.system_building_map[system_id][0]}_building"
             if system_id in self.system_controllers:
                 # Thermal controller can now use updated water thermal demand
                 thermal_controller = self.system_controllers[system_id]
@@ -547,7 +548,7 @@ class BESTOptEnvironment:
 
                 thermal_action = thermal_controller.step(
                     state=cluster_state.thermal.systems[system_id],
-                    observation=self.cluster_observations[cluster_id],
+                    observation=(cluster_state.electrical.systems[system_id], cluster_state.electrical.systems[building_id]), #@todo again, need obs function
                     disturbance=self.disturbance,
                     timestep=self.current_step
                 )
@@ -556,21 +557,25 @@ class BESTOptEnvironment:
                 # Execute HVAC system immediately
                 if system_id in self.system_modules:
                     hvac_module = self.system_modules[system_id]
-
                     # Set return air temperature from zones
-                    building_ids = self.system_building_map.get(system_id, [])
-                    all_zone_temps = []
-                    for building_id in building_ids:
-                        building_system_id = f"{building_id}_building"
-                        building_system = cluster_state.thermal.systems.get(building_system_id)
-                        if building_system:
-                            for component in building_system.components.values():
-                                if component.component_type == ComponentType.THERMAL_ZONE:
-                                    all_zone_temps.append(component.temperature)
+                    # @todo I still feel something wrong here, the actions should be handled by controller
+                    # as a dynamic model, it should not take any obs as input
+                    # right now, the coil still need return air temperature as input, which is not make sense to me....
+                    # as a local component, it dont need such access, all it need to do is actually maintain the pressure? or in other words, track the setpoint...
+                    hvac_module.update_return_air_temperature(cluster_state.electrical.systems[building_id].components['zone0'].temperature)
 
-                    if all_zone_temps:
-                        return_air_temp = sum(all_zone_temps) / len(all_zone_temps)
-                        hvac_module.update_return_air_temperature(return_air_temp)
+                    # all_zone_temps = []
+                    # for building_id in building_ids:
+                    #     building_system_id = f"{building_id}_building"
+                    #     building_system = cluster_state.thermal.systems.get(building_system_id)
+                    #     if building_system:
+                    #         for component in building_system.components.values():
+                    #             if component.component_type == ComponentType.THERMAL_ZONE:
+                    #                 all_zone_temps.append(component.temperature)
+                    #
+                    # if all_zone_temps:
+                    #     return_air_temp = sum(all_zone_temps) / len(all_zone_temps)
+                    #     hvac_module.update_return_air_temperature(return_air_temp)
 
                     hvac_result = hvac_module.step(
                         state=cluster_state.thermal.systems[system_id],
@@ -602,18 +607,21 @@ class BESTOptEnvironment:
         # Get electrical control action with all updated information
         der_systems = [sid for sid, state in cluster_state.electrical.systems.items()
                        if state.system_type == SystemType.DER]
-        #@todo ADD centralized/decentralized
+        # @todo ADD centralized/decentralized
         for system_id in der_systems:
+            # Find the building that system support
+            building_id = f"{self.system_building_map[system_id][0]}_building"
+
             if system_id in self.system_controllers:
                 electrical_controller = self.system_controllers[system_id]
                 electrical_action = electrical_controller.step(
-                    state=cluster_state.electrical.systems,
-                    observation=self.cluster_observations[cluster_id],
+                    state=cluster_state.electrical.systems[system_id], #@todo In the early stage, I didn't separate state/obs clearly just for simplifacation, now we need to gradually update these functions
+                    observation=(cluster_state.electrical.systems[system_id], cluster_state.electrical.systems[building_id]),
                     disturbance=self.disturbance,
                     timestep=self.current_step
                 )
                 cluster_action.electrical.system_actions[system_id] = electrical_action
-        #
+                #
                 # Execute DER system immediately
                 if system_id in self.system_modules:
                     der_module = self.system_modules[system_id]
@@ -721,27 +729,6 @@ class BESTOptEnvironment:
 
         return cluster_action
 
-    # def _execute_cluster_systems(self, cluster_id: str, cluster_state: ClusterState,
-    #                              cluster_action: ClusterAction):
-    #     """Execute all systems in the cluster with proper ordering."""
-    #
-    #     # Phase 1: Calculate PV generation (needed for electrical decisions)
-    #     self._execute_pv_generation(cluster_state, cluster_action)
-    #
-    #     # Phase 2: Execute thermal systems (HVAC)
-    #     self._execute_thermal_systems(cluster_state, cluster_action)
-    #
-    #     # Phase 3: Execute thermal zones
-    #     self._execute_thermal_zones(cluster_state, cluster_action)
-    #
-    #     # Phase 4: Update building loads based on HVAC power
-    #     self._update_building_loads(cluster_state)
-    #
-    #     # Phase 5: Execute electrical systems (DER with updated loads)
-    #     self._execute_electrical_systems(cluster_state, cluster_action)
-    #
-    #     # Phase 6: Execute water systems if any
-    #     self._execute_water_systems(cluster_state, cluster_action)
 
     def _execute_pv_generation(self, cluster_state: ClusterState, cluster_action: ClusterAction):
         """Calculate PV generation for all DER systems."""
@@ -771,7 +758,6 @@ class BESTOptEnvironment:
                 # Find building(s) this HVAC serves
                 building_ids = self.system_building_map.get(system_id, [])
 
-
                 # Collect zone temperatures from all buildings served by this HVAC
                 all_zone_temps = []
 
@@ -785,14 +771,10 @@ class BESTOptEnvironment:
                                 all_zone_temps.append(component.temperature)
                                 self.logger.debug(f"Zone {component.component_id}: {component.temperature:.1f}°C")
 
-
-
                 return_air_temp = sum(all_zone_temps) / len(all_zone_temps)
                 hvac_module.update_return_air_temperature(return_air_temp)
                 self.logger.debug(f"HVAC {system_id} return air temp set to {return_air_temp:.1f}°C "
                                   f"(avg of {len(all_zone_temps)} zones)")
-
-
 
                 # Get thermal action for this system
                 thermal_action = cluster_action.thermal.system_actions.get(system_id)
@@ -874,7 +856,7 @@ class BESTOptEnvironment:
                                 zone_state.humidity_pct = zone_result['humidity']
 
     def _execute_electrical_zones(self, cluster_state: ClusterState,
-                               cluster_action: ClusterAction):
+                                  cluster_action: ClusterAction):
         """Execute thermal zone dynamics using HVAC actions directly."""
 
         # Process each building's thermal zones
@@ -898,13 +880,13 @@ class BESTOptEnvironment:
                 for zone_id, zone_state in system_state.components.items():
                     if zone_state.component_type == ComponentType.ELECTRICAL_ZONE:
                         zone_key = f"{building_id}.{zone_id}"
-                        #@ todo the name and structure need to be revised!
+                        # @ todo the name and structure need to be revised!
                         zone_module = self.electrical_zone_modules['SFH_1.zone0']
                         building_power = zone_module.step(
                             disturbance=self.disturbance,
                             timestep=self.current_step
                         )
-                        zone_state.total_load_w = building_power+hvac_load_total
+                        zone_state.total_load_w = building_power + hvac_load_total
                         zone_state.hvac_load_w = hvac_load_total
                         zone_state.building_power_w = building_power
 
@@ -947,7 +929,6 @@ class BESTOptEnvironment:
                         building_load=building_load  # Pass building load
                     )
 
-
     def _calculate_building_load(self, cluster_state: ClusterState) -> float:
         """Calculate total electrical load from buildings."""
         total_load = 0.0
@@ -963,6 +944,7 @@ class BESTOptEnvironment:
         total_load += sum(self.state_manager.cache.get('hvac_power', {}).values())
 
         return total_load
+
     def _execute_water_systems(self, cluster_state: ClusterState, cluster_action: ClusterAction):
         """Execute water systems if any."""
         for system_id, system_state in cluster_state.water.systems.items():

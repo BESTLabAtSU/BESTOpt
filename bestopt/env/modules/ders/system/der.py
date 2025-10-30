@@ -31,6 +31,7 @@ class ComponentRegistry:
                 component_type=component_type,
                 system_id=system_id
             )
+            return module, state
         elif component_type == ComponentType.BATTERY:
             module = BatteryModule(config=config, name=component_id)
             state = BatteryComponentState(
@@ -38,6 +39,7 @@ class ComponentRegistry:
                 component_type=component_type,
                 system_id=system_id
             )
+            return module, state
         elif component_type == ComponentType.EV:
             module = EVModule(config=config, name=component_id)
             state = EVComponentState(
@@ -45,8 +47,9 @@ class ComponentRegistry:
                 component_type=component_type,
                 system_id=system_id
             )
-
-        return module, state
+            return module, state
+        else:
+            raise ValueError(f"Unsupported component type: {component_type}")
 
 
 class DERModule(BaseModule):
@@ -58,17 +61,17 @@ class DERModule(BaseModule):
         super().__init__(config, name)
         self.system_config = config.get("system_config", {})
 
-        # Parse configurations but don't create modules yet
+        # Parse configurations
         self.pv_configs = self._parse_component_config('pvs', 'pv')
         self.battery_configs = self._parse_component_config('batteries', 'bat')
         self.ev_configs = self._parse_component_config('evs', 'ev')
 
-        # Component containers - will be populated during register_component_state
+        # Module containers
         self.pv_modules: Dict[str, Any] = {}
         self.battery_modules: Dict[str, Any] = {}
         self.ev_modules: Dict[str, Any] = {}
 
-        # State references for quick access
+        # State containers
         self.pv_states: Dict[str, Any] = {}
         self.battery_states: Dict[str, Any] = {}
         self.ev_states: Dict[str, Any] = {}
@@ -96,9 +99,6 @@ class DERModule(BaseModule):
             self.pv_states[pv_id] = component_state
             state.components[pv_id] = component_state
 
-            # Optionally link state to module for direct access
-            module.state = component_state
-
             self.logger.debug(f"Registered PV component: {pv_id}")
 
         # Create Battery components
@@ -118,7 +118,6 @@ class DERModule(BaseModule):
             self.battery_modules[bat_id] = module
             self.battery_states[bat_id] = component_state
             state.components[bat_id] = component_state
-            module.state = component_state
 
             self.logger.debug(f"Registered Battery component: {bat_id}")
 
@@ -138,7 +137,6 @@ class DERModule(BaseModule):
             self.ev_modules[ev_id] = module
             self.ev_states[ev_id] = component_state
             state.components[ev_id] = component_state
-            module.state = component_state
 
             self.logger.debug(f"Registered EV component: {ev_id}")
 
@@ -184,18 +182,15 @@ class DERModule(BaseModule):
             pv_state = state.components.get(pv_id)
 
             if pv_state and pv_state.component_type == ComponentType.PV:
-                results = pv_module.step(
+                pv_state = pv_module.step(
                     state=pv_state,  # Pass the actual state from the system
                     disturbance=disturbance,
-                    resolution=900,  # You might want to make this configurable
+                    resolution=900,
                     timestep=timestep,
                 )
 
-                # The state is updated inside pv_module.step()
-                # Just accumulate the generation
-                if 'power_generation' in results:
-                    total_generation += results['power_generation']
-                    self.logger.debug(f"PV {pv_id}: {results['power_generation']:.1f}W")
+                total_generation += pv_state.generation_w
+                self.logger.debug(f"PV {pv_id}: {pv_state.generation_w:.1f}W")
 
         return total_generation
 
