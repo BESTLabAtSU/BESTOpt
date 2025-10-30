@@ -52,41 +52,32 @@ class FanModule(BaseModule):
         action: "FanComponentAction",
         timestep: float
     ) -> FanComponentState:
-        """
-        One step (SI):
-          - read airflow setpoint [m^3/s]
-          - compute power [W] via affinity law
-          - accumulate step energy [J] = W * s
-          - write results IN-PLACE into FanState
-        """
-        
-        # 1) airflow setpoint [m^3/s]
-        sp = action.airflow_setpoint_m3s
 
+        sp = action.airflow_setpoint_m3s
         flow = 0.0 if sp is None else float(sp)
         if flow < 0.0:
             self.logger.warning(f"{self.name}: negative flow received; clamped to 0.0")
             flow = 0.0
 
-        # 2) power via affinity law [W]
-        if flow > 1e-4 * self.rated_power_W and self.rated_power_W >= 0.0:
-            PLR = flow / self.rated_flow_m3s
-            power_W = self.rated_power_W * (0.00153 + 0.0052*PLR + 1.1086*(PLR)**2 - 0.1164*(PLR)**3)
+        if self.rated_flow_m3s > 0:
+            flow = min(flow, self.rated_flow_m3s)
+
+        if flow > 1e-6 and self.rated_flow_m3s > 0 and self.rated_power_W > 0:
+            PLR = max(0.0, min(1.0, flow / self.rated_flow_m3s))
+            power_W = self.rated_power_W * (0.00153 + 0.0052*PLR + 1.1086*(PLR**2) - 0.1164*(PLR**3))
         else:
             power_W = 0.0
 
-        # 3) step energy [J]; timestep in seconds
         energy_J = power_W * (timestep if (timestep and timestep > 0.0) else 0.0)
 
-        # 4) in-place update 
         prev = getattr(state, "energy_J_cum", 0.0) or 0.0
-        state.airflow_m3s   = flow
-        state.power_W       = power_W
-        state.energy_J_cum  = prev + energy_J
+        state.airflow_m3s  = flow          
+        state.power_W      = power_W
+        state.energy_J_cum = prev + energy_J
 
         self._record_state({"airflow_m3s": flow, "power_W": power_W, "energy_J": energy_J})
-        
         return state
+
 
 
 

@@ -34,14 +34,15 @@ class FCUModule(BaseModule):
     def __init__(self, config: Dict[str, Any], name: str = "fcu_system"):
         super().__init__(config, name)
 
-        # Component modules
-        self.fan = FanModule(config.get("fan", {}), name="supply_fan")
-        self.fan_ctrl = FanLocalController(config.get("fan_ctrl", {}), name="fan_controller")
-        self.coil = CoilModule(config.get("coil", {}), name="cooling_coil")
-        self.pump = PumpModule(config.get("pump", {}), name="chilled_water_pump")
-        self.pump_ctrl = PumpLocalController(config.get("pump_ctrl", {}), name="pump_controller")
-        self.chiller = ChillerModule(config.get("chiller", {}), name="chiller")
-        self.tower = CoolingTowerModule(config.get("tower", {}), name="cooling_tower")
+        cfg = config.get("system_config", config)
+
+        self.fan      = FanModule(cfg.get("fan", {}), name="supply_fan")
+        self.fan_ctrl = FanLocalController(cfg.get("fan_ctrl", {}), name="fan_controller")
+        self.coil     = CoilModule(cfg.get("coil", {}), name="cooling_coil")
+        self.pump     = PumpModule(cfg.get("pump", {}), name="chilled_water_pump")
+        self.pump_ctrl= PumpLocalController(cfg.get("pump_ctrl", {}), name="pump_controller")
+        self.chiller  = ChillerModule(cfg.get("chiller", {}), name="chiller")
+        self.tower    = CoolingTowerModule(cfg.get("tower", {}), name="cooling_tower")
 
         # Return air temperature
         self.return_air_temperature = None

@@ -39,20 +39,25 @@
             "rated_power_W": 1000
           },
           "fan_ctrl": {
-            "ctrl_type": "staged"
+            "ctrl_type": "staged",
+            "stages": 10,
+            "rated_flow_m3s": 1
+          },
+          "coil": {
+            "effectiveness": 0.7
           },
           "pump": {
-            "rated_flow_m3s": 0.005,
-            "rated_power_W": 500
+            "rated_flow_m3s": 0.01,
+            "rated_power_W": 1500
           },
           "chiller": {
-            "rated_capacity_W": 3500,
+            "rated_capacity_W": 15000,
             "rated_cop": 4.5
           },
           "tower": {
-            "rated_capacity_W": 3500,
-            "rated_fan_power_W": 2000,
-            "pump_power_per_flow": 1800,
+            "rated_capacity_W": 15000,
+            "rated_fan_power_W": 400,
+            "pump_power_per_flow": 85000,
             "min_approach_C": 3.0,
             "max_approach_C": 7.0
           }
@@ -175,14 +180,14 @@
           "startday": 1,
           "trainday": 180,
           "testday": 1,
-          "datapath": "D:\\github\\BEST_OPT\\bestopt\\data\\SFH\\BLDG\\clean\\SFH_1.csv",
+          "datapath": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\BLDG\\clean\\SFH_1.csv",
           "temp_unit": "C",
           "device": "cpu",
           "save_name": "SFH_1"
         },
-        "model_path": "D:\\github\\BEST_OPT\\bestopt\\examples\\Saved\\SFH_1\\Trained_mdlEnco48_Deco96\\PI-modnn_180daysTest_on07-01.pth",
-        "scaler_path": "D:\\github\\BEST_OPT\\bestopt\\examples\\Scaler\\SFH_1\\ModNN_scaler.pkl",
-        "historical_data_path": "D:\\github\\BEST_OPT\\bestopt\\data\\SFH\\BLDG\\clean\\SFH_1.csv",
+        "model_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\examples\\Saved\\SFH_1\\Trained_mdlEnco48_Deco96\\PI-modnn_180daysTest_on07-01.pth",
+        "scaler_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\examples\\Scaler\\SFH_1\\ModNN_scaler.pkl",
+        "historical_data_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\BLDG\\clean\\SFH_1.csv",
         "encoder_length": 48,
         "retrain": "Off",
         "simulation_start_time": "2023-08-01 00:00:00"
@@ -224,14 +229,14 @@
   "disturbances": {
     "weather": {
       "parameters": {
-        "file_path": "D:\\github\\BEST_OPT\\bestopt\\data\\SFH\\DIST\\weather\\weather.csv",
+        "file_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\DIST\\weather\\weather.csv",
         "simulation_start_time": "2023-08-01 00:00:00"
       },
       "class_path": "bestopt.env.disturbances.weather.WeatherModule"
     },
     "occupancy": {
       "parameters": {
-        "file_path": "D:\\github\\BEST_OPT\\bestopt\\data\\SFH\\DIST\\occupancy\\occupancy.csv",
+        "file_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\DIST\\occupancy\\occupancy.csv",
         "simulation_start_time": "2023-08-01 00:00:00"
       },
       "class_path": "bestopt.env.disturbances.occupancy.OccupancyModule"
