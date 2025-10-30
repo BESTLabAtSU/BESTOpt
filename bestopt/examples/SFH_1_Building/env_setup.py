@@ -51,6 +51,12 @@ for timestep in range(env.total_step):
     pc = env.electrical_zone_modules['SFH_1.zone0'].pc_power / 1000
     tv = env.electrical_zone_modules['SFH_1.zone0'].tv_power / 1000
     lighting = env.electrical_zone_modules['SFH_1.zone0'].lighting_power / 1000
+    #
+    grid2building = env.cluster_actions[cluster_id].electrical.system_actions['der_system_1'].grid2building
+    grid2ev_dict = env.cluster_actions[cluster_id].electrical.system_actions['der_system_1'].grid2ev
+    grid2battery_dict = env.cluster_actions[cluster_id].electrical.system_actions['der_system_1'].grid2battery
+    grid2ev = sum(grid2ev_dict.values())
+    grid2battery = sum(grid2battery_dict.values())
     # Get peak signal
     is_peak = env.disturbance.prices.peaksignal  # True or False
     # Update the HVAC dashboard
