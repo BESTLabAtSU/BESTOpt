@@ -12,7 +12,6 @@ from bestopt.env.core.data_structure import (
 fcu_config = {
     "fan": {"rated_flow_m3s": 8, "rated_power_W": 8*1000}, #fan_power_per_flow ≈ 1,000 – 1,500 W per m³/s
     "fan_ctrl": {"ctrl_type": "linear"},
-    "coil": {"epsilon": 0.8},
     "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 0.01*100_000}, # pump_power_per_flow = 100,000 W per m³/s
     "chiller": {"rated_capacity_W": 90_000, "rated_cop": 5.5},
     "tower": {"rated_capacity_W": 100_000}
@@ -44,7 +43,7 @@ for t in range(n_steps):
                        thermal_storage={}, total_heating_load=0.0, total_cooling_load=0.0)
     # === Fake Supervisory Controller Outputs ===
     action.thermal_load = -8_0000 + 2000 * (t % 6)  # Cooling demand (negative)
-    action.supervisory_supply_air_temperature = 13.0       # SAT setpoint
+    action.supervisory_supply_air_temperature = 15.0       # SAT setpoint
     action.supervisory_supply_air_flow_rate = abs(action.thermal_load)/1005/1.225/13 # m³/s
     action.chws_temp_c_sp = 5.0              # CHW setpoint
     action.condenser_temp_c_sp = 25.0        # CW setpoint

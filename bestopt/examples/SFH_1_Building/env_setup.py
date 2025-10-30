@@ -39,6 +39,12 @@ for timestep in range(env.total_step):
     # Get supervisory supply air setpoints
     supply_air_temp_setpt = env.cluster_actions[cluster_id].thermal.system_actions['hvac_system_1'].supply_temp_setpoint_c
     supply_air_flow_setpt = env.cluster_actions[cluster_id].thermal.system_actions['hvac_system_1'].supply_airflow_setpoint_m3s
+    
+    water_flow_real = hvac_system.CHW_flow_actual_m3s
+    # water_flow_setpt = env.cluster_actions[cluster_id].thermalFCUModule.system_actions['hvac_system_1'].
+    
+    chiller_supply_water_temp =  hvac_system.CHW_supply_temp_C
+        
     # Get electrical system data
     bat_soc = der_system.battery_states['bat_1'].soc
     ev_tesla_soc = der_system.ev_states['ev_tesla'].soc
@@ -70,7 +76,9 @@ for timestep in range(env.total_step):
         supply_air_temp_real=supply_air_temp_real,
         supply_air_temp_setpt=supply_air_temp_setpt,
         supply_air_flow_real=supply_air_flow_real,
-        supply_air_flow_setpt=supply_air_flow_setpt
+        supply_air_flow_setpt=supply_air_flow_setpt,
+        water_flow_real=water_flow_real,                     # m³/s (pass 0 if zero)
+        chiller_supply_water_temp=chiller_supply_water_temp  # °C
     )
     # Update the Electrical dashboard
     electrical_plotter.add_data_point(

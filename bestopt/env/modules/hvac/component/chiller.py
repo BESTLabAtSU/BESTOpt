@@ -80,10 +80,9 @@ class ChillerModule(BaseModule):
         cooling_tower_state: "CoolingTowerComponentState",
         timestep: float
     ) -> Dict[str, Any]:
-        t_in = float(getattr(coil_state, "water_outlet_temp_C", 12.0))
-        t_out_k_lag1 = float(getattr(coil_state, "water_inlet_temp_C", 5.0))  # chiller last-step outlet temp
-        t_out_sp = np.clip(float(getattr(action, "chws_temp_c_sp", 5.0)),self.min_chws_temp, self.max_chws_temp)
-        flow_m3s = float(getattr(pump_state, "waterflow_m3s", 0.01))
+        t_in = float(getattr(coil_state, "water_outlet_temp_C", 12.0))  # chiller chw inlet temp        t_out_k_lag1 = float(getattr(coil_state, "water_inlet_temp_C", 5.0))  # chiller last-step outlet temp
+        t_out_sp = np.clip(float(getattr(action, "chws_temp_setpoint_c", 7.0)),self.min_chws_temp, self.max_chws_temp)
+        flow_m3s = float(getattr(pump_state, "waterflow_m3s"))
         # t_cond_sp = float(getattr(action, "condenser_temp_c_sp", 35.0))
         t_cond = float(getattr(cooling_tower_state, "cw_supply_temp_c", 35.0))  
 

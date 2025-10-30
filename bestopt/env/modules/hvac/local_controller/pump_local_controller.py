@@ -1,41 +1,35 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from math import inf
 
 from bestopt.env.core.base import BaseModule
-from bestopt.env.core.data_structure import HVACSystemAction, HVACSystemState, PumpComponentAction, ComponentType
-from bestopt.env.core.constants import WATER_DENSITY, WATER_SPECIFIC_HEAT
-
+from bestopt.env.core.data_structure import (
+    HVACSystemAction, HVACSystemState, PumpComponentAction, ComponentType
+)
 
 class PumpLocalController(BaseModule):
-    """
-    Local pump controller. Water flow is controlled based on a constant 
-    temperature difference across the coil.
-
-    Config:
-        - delta_T (float, default 5.0): Desired temperature difference across the coil [K].
-        - pump_flowrate_max (float, default inf): Maximum allowable flowrate [m^3/s].
-
-    Input:
-        - ThermalAction.thermal_load [W] 
-
-    Output:
-        - ThermalAction.pump_flowrate [m^3/s] = thermal_load / (delta_T * rho * cp)
-    """
 
     def __init__(self, config: Dict[str, Any], name: str = "PumpLocalController"):
         super().__init__(config, name)
-        self.delta_T: float = float(config.get("delta_T", 5.0))  # K
-        # if self.delta_T <= 0:
-        #     raise ValueError("delta_T must be a positive number.")
 
-        self.pump_flowrate_max: float = float(config.get("pump_flowrate_max", inf))  # m^3/s
-        if self.pump_flowrate_max <= 0:
-            raise ValueError("pump_flowrate_max must be a positive number.")
+        self.Kp: float = float(config.get("Kp_flow_per_K", 2e-4))  # (m^3/s)/K
+        self.flow_min: float = float(config.get("flow_min_m3s", 0.0))
+        self.flow_max: float = float(config.get("pump_flowrate_max", inf))
+        self.deadband: float = float(config.get("deadband_K", 0.2))  
+        self.rate_limit: float = float(config.get("rate_limit_m3s_per_s", 5e-5))  
+
+        if self.flow_max <= 0:
+            raise ValueError("pump_flowrate_max / flow_max must be positive.")
+        if self.Kp < 0:
+            raise ValueError("Kp_flow_per_K must be non-negative.")
+
+        self.current_flowrate: float | None = None
 
     def initialize(self) -> None:
-        """Initialize controller state."""
         self._initialized = True
-        self.current_flowrate = None
+        self.current_flowrate = None  
+
+    def _clip(self, x: float, lo: float, hi: float) -> float:
+        return max(lo, min(hi, x))
 
     def step(
         self,
@@ -43,44 +37,45 @@ class PumpLocalController(BaseModule):
         action: HVACSystemAction,
         timestep: float
     ) -> PumpComponentAction:
-        """
-        Compute local pump command and return a local-controller action.
 
-        Args:
-            action (ThermalAction): Contains the thermal load in Watts.
-            timestep (float): Current timestep [s].
 
-        Returns:
-            ThermalAction: The computed pump flowrate command.
-        """
-        #@ TODO I use flowrate and temperature setpoint here to estimate thermal demand, is it OK?
-        # Calculate required flowrate
-        #@ TODO should delta T update across time
-        pump_flowrate = abs(action.hvac_thermal_load_demand / (
-            self.delta_T * WATER_DENSITY * WATER_SPECIFIC_HEAT
-        ))
+        T_sa_prev = float(getattr(state, "air_outlet_temp_c", None)
+                          if getattr(state, "air_outlet_temp_c", None) is not None else
+                          getattr(state, "air_outlet_temp_C", 0.0))  
+        T_sa_sp   = float(getattr(action, "supply_temp_setpoint_c", None)
+                          if getattr(action, "supply_temp_setpoint_c", None) is not None else
+                          getattr(action, "supply_temp_setpoint_C", T_sa_prev))  
 
-        # Enforce maximum limit
-        pump_flowrate = min(pump_flowrate, self.pump_flowrate_max)
+        flow_prev = self.current_flowrate if self.current_flowrate is not None else self.flow_min
 
-        self.current_flowrate = pump_flowrate
+
+        e = T_sa_prev - T_sa_sp
+
+
+        delta = 0.0 if abs(e) < self.deadband else self.Kp * e
+
+        flow_target = self._clip(flow_prev + delta, self.flow_min, self.flow_max)
+
+
+        if self.rate_limit is not None and self.rate_limit > 0 and timestep and timestep > 0:
+            max_step = self.rate_limit * float(timestep)
+            flow_lo  = flow_prev - max_step
+            flow_hi  = flow_prev + max_step
+            flow_cmd = self._clip(flow_target, max(flow_lo, self.flow_min), min(flow_hi, self.flow_max))
+        else:
+            flow_cmd = flow_target
+
+        self.current_flowrate = flow_cmd
 
         local_action = PumpComponentAction(
             component_id=state.system_id,
             component_type=ComponentType.PUMP.value
         )
-        local_action.flow_setpoint_m3s = pump_flowrate
-
-        # Optionally record state for debugging/monitoring
-        # self._record_state({
-        #     "thermal_load": thermal_load,
-        #     "pump_flowrate": pump_flowrate
-        # })
+        local_action.flow_setpoint_m3s = flow_cmd
 
         return local_action
 
     def reset(self) -> None:
-        """Reset controller state."""
         self.clear_history()
         self.current_flowrate = None
         self._initialized = True

@@ -275,25 +275,23 @@ class ChillerComponentState(ComponentState):
 
 @dataclass
 class HeatPumpComponentState(ComponentState):
-    """Heat pump component state (air- or water-source)."""
-    thermal_output_w: float = 0.0
+    """Heat pump component state (air- or water-source)."""  
+    load_flow_m3s: float = 0.0
+    load_inlet_temp_C: float = 0.0
+    load_outlet_temp_c: float = 0.0
+    
+    source_flow_m3s: float = 0.0
+    source_inlet_temp_C: float = 0.0
+    source_outlet_temp_c: float = 0.0
+    
+    mode: HVACMode = HVACMode.OFF
+    thermal_output_W: float = 0.0
     power_W: float = 0.0
     cop: float = 0.0
-    mode: HVACMode = HVACMode.OFF
-
-    source_temp_in_c: float = 0.0
-    source_temp_out_c: float = 0.0
-    sink_temp_in_c: float = 0.0
-    sink_temp_out_c: float = 0.0
-    source_flow_m3s: float = 0.0
-    sink_flow_m3s: float = 0.0
-
-    energy_j_cum: float = 0.0
 
     def __post_init__(self):
         self.component_type = ComponentType.HEATPUMP
         self.set_domain_impact(DomainType.ELECTRICAL, 'power_w', self.power_W)
-
 
 @dataclass
 class BoilerComponentState(ComponentState):
@@ -551,6 +549,16 @@ class CoolingTowerComponentAction(ComponentAction):
 
     def __post_init__(self):
         self.component_type = "COOLING_TOWER"
+
+@dataclass
+class HeatPumpComponentAction(ComponentAction):
+    """Heat pump control action."""
+    enable: bool = False
+    chws_temp_setpoint_c: float = 7.0
+    hw_temp_setpoint_c: float = 45.0
+
+    def __post_init__(self):
+        self.component_type = "HEAT_PUMP"
 
 @dataclass
 class BatteryComponentAction(ComponentAction):
