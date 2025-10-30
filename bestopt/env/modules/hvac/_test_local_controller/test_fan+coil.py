@@ -1,7 +1,7 @@
 # bestopt/env/controllers/test_fan_local_controller.py
 from dataclasses import dataclass
 
-from bestopt.env.modules.hvac.local_controller.fan_local_controller import FanLocalController
+from bestopt.env.modules.hvac.local_controller.fan_local_controller0 import FanLocalController
 from bestopt.env.core.data_structure import ThermalAction, HVACLocalAction
 
 # One step (15 min); action is unused so we pass None

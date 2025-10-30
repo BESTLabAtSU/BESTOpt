@@ -66,11 +66,11 @@ class PumpModule(BaseModule):
         if flow < 0.0:
             self.logger.warning(f"{self.name}: negative flow received; clamped to 0.0")
             flow = 0.0
-
+        flow = min(flow, self.rated_flow_m3s)
         # 2) power computation
         # 2) power via affinity law [W]
         if flow > 1e-8 * self.rated_power_W and self.rated_power_W >= 0.0:
-            PLR = flow / self.rated_flow_m3s
+            PLR = max(0.0, min(1.0, flow / self.rated_flow_m3s))
             power_W = self.rated_power_W * (0.00153 + 0.0052*PLR + 1.1086*(PLR)**2 - 0.1164*(PLR)**3)
             power_W = max(power_W, 0.0)   # clamp to zero
         else:
