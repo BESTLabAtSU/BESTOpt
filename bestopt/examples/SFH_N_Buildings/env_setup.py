@@ -46,9 +46,10 @@ def run_multi_building_simulation(config_path: str = None, max_steps: int = None
             'cooking_kw': [],
             'pc_kw': [],
             'tv_kw': [],
-            'lighting_kw': []
+            'lighting_kw': [],
+            'electricity_price': [],
+            'is_peak': [],
         }
-
     # Simulation loop
     print(f"\nStarting multi-building simulation for {total_steps} steps...")
     print("=" * 60)
@@ -146,14 +147,14 @@ def run_multi_building_simulation(config_path: str = None, max_steps: int = None
 
             # Grid power calculation
             der_action = env.cluster_actions[cluster_id].electrical.system_actions.get(der_system_id)
-            if der_action:
-                grid2building = der_action.grid2building if hasattr(der_action, 'grid2building') else 0
-                grid2ev = sum(der_action.grid2ev.values()) if hasattr(der_action, 'grid2ev') else 0
-                grid2battery = sum(der_action.grid2battery.values()) if hasattr(der_action, 'grid2battery') else 0
-                grid_power = (grid2building + grid2ev + grid2battery) / 1000  # Convert to kW
-            else:
-                # Simple calculation if no action available
-                grid_power = total_load - pv_generation / 1000 + battery_power / 1000
+            grid2building = der_action.grid2building if hasattr(der_action, 'grid2building') else 0
+            grid2ev = sum(der_action.grid2ev.values()) if hasattr(der_action, 'grid2ev') else 0
+            grid2battery = sum(der_action.grid2battery.values()) if hasattr(der_action, 'grid2battery') else 0
+            grid_power = (grid2building + grid2ev + grid2battery) / 1000
+
+            # Price signal
+            electricity_price = env.disturbance.prices.electricity_price # ¢/kWh
+            is_peak = env.disturbance.prices.peaksignal # Bool
 
             # Store data
             data = building_data[building_id]
@@ -173,6 +174,8 @@ def run_multi_building_simulation(config_path: str = None, max_steps: int = None
             data['pc_kw'].append(pc / 1000)
             data['tv_kw'].append(tv / 1000)
             data['lighting_kw'].append(lighting / 1000)
+            data['electricity_price'].append(electricity_price)
+            data['is_peak'].append(is_peak)
 
             # Store EV SOCs
             for ev_id, soc in ev_socs.items():
@@ -416,7 +419,7 @@ if __name__ == "__main__":
     fig2, stats = create_summary_dashboard(building_data)
 
     # Save plots
-    output_dir = os.path.join(PROJECT_ROOT_PATH, "examples", "Multi_Building", "results")
+    output_dir = os.path.join(PROJECT_ROOT_PATH, "examples", "SFH_N_Buildings", "results")
     os.makedirs(output_dir, exist_ok=True)
 
     fig1.savefig(os.path.join(output_dir, 'multi_building_results.png'), dpi=300, bbox_inches='tight')

@@ -65,6 +65,7 @@ for timestep in range(env.total_step):
     grid2battery = sum(grid2battery_dict.values())
     # Get peak signal
     is_peak = env.disturbance.prices.peaksignal  # True or False
+    electricity_price = env.disturbance.prices.electricity_price # ¢/kWh
     # Update the HVAC dashboard
     hvac_plotter.add_data_point(
         timestep=timestep,
