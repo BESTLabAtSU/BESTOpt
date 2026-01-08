@@ -21,7 +21,7 @@ class WeatherModule(BaseModule):
     def __init__(self, config: Dict[str, Any], name: str = "Weather"):
         super().__init__(config, name)
         self.weather_data: Optional[pd.DataFrame] = None
-        self.current_weather = WeatherDisturbance()
+        self.weather = WeatherDisturbance()
         self.current_timestep = 0
         # @TODO for future large scale evaluation
         self.location = config.get("location", "Syracuse, NY")
@@ -44,7 +44,7 @@ class WeatherModule(BaseModule):
             self.weather_data = None
 
         # Initialize current weather
-        self.current_weather = WeatherDisturbance(outdoor_dry_bulb_temp=0.0, outdoor_wet_bulb_temp = 0.0, solar_radiation_w_m2=0.0)
+        self.weather = WeatherDisturbance(outdoor_dry_bulb_temp=0.0, outdoor_wet_bulb_temp=0.0, solar_radiation_w_m2=0.0)
         self.logger.info(f"Weather module initialized: {self.name}")
 
     def step(self, current_step: int) -> Optional[WeatherDisturbance]:
@@ -60,9 +60,11 @@ class WeatherModule(BaseModule):
             )
             return None
 
-        weather = self._get_weather_from_data(current_step)
-        self.current_weather = weather
-        return weather
+        self._get_weather_from_data(current_step)
+        #@todo use my previous cnn-lstm-baysien model instead
+        self._get_weather_forecast_from_data(current_step)
+
+        return self.weather
 
     def _load_weather_file(self, file_path: str) -> None:
         """Load weather data from CSV or EPW file into self.weather_data."""
@@ -111,8 +113,23 @@ class WeatherModule(BaseModule):
         else:
             raise ValueError(f"Unsupported weather file format: {file_path}")
 
-    def _get_weather_from_data(self, current_step: int) -> WeatherDisturbance:
+    def _get_weather_forecast_from_data(self, current_step: int):
         self.weather_data['Time'] = pd.to_datetime(self.weather_data['Time'])
+        # @ todo hard coding now, need update
+        sim_start = pd.Timestamp("2023-08-01 00:00:00")
+        sim_data = self.weather_data[self.weather_data['Time'] >= sim_start]
+        forecast = sim_data.iloc[current_step:current_step+96] # let's say 96 steps now, all of them need to be parametrized
+        temp_forecast = ((forecast["outdoor_temperature"] - 32) * 5 / 9).to_numpy()  # @TODO need to use standard unit, use hard coding for now
+        # @TODO need to seperate dry/wet bulb temperature later
+        # also need to update the data format process
+        solar_forecast = forecast["solar_radiation"].to_numpy()
+        self.weather.forecast_outdoor_dry_bulb_temp = temp_forecast
+        self.weather.forecast_outdoor_wet_bulb_temp = temp_forecast
+        self.weather.forecast_solar_radiation_w_m2 = solar_forecast
+
+    def _get_weather_from_data(self, current_step: int):
+        self.weather_data['Time'] = pd.to_datetime(self.weather_data['Time'])
+        #@ todo hard coding now, need update
         sim_start = pd.Timestamp("2023-08-01 00:00:00")
         sim_data = self.weather_data[self.weather_data['Time'] >= sim_start]
         row = sim_data.iloc[current_step]
@@ -120,11 +137,10 @@ class WeatherModule(BaseModule):
         # @TODO need to seperate dry/wet bulb temperature later
         # also need to update the data format process
         sr = float(row["solar_radiation"])
-        return WeatherDisturbance(
-            outdoor_dry_bulb_temp=ot,
-            outdoor_wet_bulb_temp=ot,
-            solar_radiation_w_m2=sr
-        )
+        self.weather.outdoor_dry_bulb_temp = ot
+        self.weather.outdoor_wet_bulb_temp = ot
+        self.weather.solar_radiation_w_m2 = sr
+
 
     def reset(self) -> None:
         self.current_timestep = 0

@@ -348,6 +348,7 @@ class ThermalDynamicsModule(BaseModule):
 
             # Update the zone temperature in state
             current_zone_state.temperature = float(predicted_temp)
+            current_zone_state.temperature_buffer = self.history_buffer
 
             # Return step results
             return {

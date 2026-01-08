@@ -25,19 +25,6 @@ import random
 import numpy as np
 
 
-def set_seed(seed):
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
-
-seed_value = 142857
-set_seed(seed_value)
-
-
 class BESTOptEnvironment:
     """Runtime environment with hierarchical cluster-domain-system-component architecture."""
 
@@ -687,13 +674,25 @@ class BESTOptEnvironment:
         for dist_name, dist_module in self.disturbance_modules.items():
             try:
                 dist_update = dist_module.step(current_step=self.current_step)
-
+                #@todo again, the module, state management should aligh with system module
                 if dist_name == "weather":
                     self.disturbance.weather = dist_update
+                    # if self.disturbance.weather_buffer is None:
+                    #     self.disturbance.weather_buffer = []
+                    # else:
+                    #     self.disturbance.weather_buffer.append(dist_update)
                 elif dist_name == "price":
                     self.disturbance.prices = dist_update
+                    # if self.disturbance.prices_buffer is None:
+                    #     self.disturbance.prices_buffer = []
+                    # else:
+                    #     self.disturbance.prices_buffer.append(dist_update)
                 elif dist_name == "occupancy":
                     self.disturbance.occupancy = dist_update
+                    # if self.disturbance.occupancy_buffer is None:
+                    #     self.disturbance.occupancy_buffer = []
+                    # else:
+                    #     self.disturbance.occupancy_buffer.append(dist_update)
 
             except Exception as e:
                 self.logger.error(f"Disturbance {dist_name} update failed: {e}")
@@ -841,7 +840,7 @@ class BESTOptEnvironment:
                             'hvac_system_id': hvac_system_id,
                             'zone_key': zone_key
                         })()
-
+                        #@todo the state and module should be handled like system, instead add separatly outside the module
                         zone_result = zone_module.step(
                             state=zone_state,
                             action=zone_action,
@@ -849,11 +848,6 @@ class BESTOptEnvironment:
                             timestep=self.current_step
                         )
 
-                        if isinstance(zone_result, dict):
-                            if 'temperature' in zone_result:
-                                zone_state.temperature = zone_result['temperature']
-                            if 'humidity' in zone_result:
-                                zone_state.humidity_pct = zone_result['humidity']
 
     def _execute_electrical_zones(self, cluster_state: ClusterState,
                                   cluster_action: ClusterAction):
@@ -881,11 +875,13 @@ class BESTOptEnvironment:
                     if zone_state.component_type == ComponentType.ELECTRICAL_ZONE:
                         zone_key = f"{building_id}.{zone_id}"
                         # @ todo the name and structure need to be revised!
+                        # @ todo need to check the name for multi-building cluster, forget if it can work or not
                         zone_module = self.electrical_zone_modules['SFH_1.zone0']
                         building_power = zone_module.step(
                             disturbance=self.disturbance,
                             timestep=self.current_step
                         )
+                        #@todo should update inside the module step
                         zone_state.total_load_w = building_power + hvac_load_total
                         zone_state.hvac_load_w = hvac_load_total
                         zone_state.building_power_w = building_power

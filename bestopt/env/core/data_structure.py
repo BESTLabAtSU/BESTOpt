@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Set, Union
 from enum import Enum
 import numpy as np
+from collections import deque
 
 # @TODO set_domain is important to manager cross domain observations, whihc need to follow a clean variable format, I will revise it later
 # @Considering to add a more detailed observation structure
@@ -401,6 +402,7 @@ class ThermalZoneComponentState(ComponentState):
     humidity_pct: float = 50.0
     heat_gain_w: float = 0.0
     occupancy: int = 0
+    temperature_buffer: deque[Dict[str, float]] = field(default_factory=lambda: deque(maxlen=48))
 
     def __post_init__(self):
         self.component_type = ComponentType.THERMAL_ZONE
@@ -750,6 +752,9 @@ class WeatherDisturbance:
     solar_radiation_w_m2: float = 0.0
     wind_speed_ms: float = 0.0
     precipitation_mm: float = 0.0
+    forecast_outdoor_dry_bulb_temp: List[float] = field(default_factory=list)
+    forecast_outdoor_wet_bulb_temp: List[float] = field(default_factory=list)
+    forecast_solar_radiation_w_m2: List[float] = field(default_factory=list)
 
 
 @dataclass
@@ -770,6 +775,7 @@ class PriceSignals:
     demand_charge: float = 15.0  # $/kW
     carbon_intensity: float = 500.0  # gCO2/kWh
     gas_price: Optional[float] = None  # $/therm
+    forecast_peaksignal: List[float] = field(default_factory=list)
 
 @dataclass
 class OccupancyDisturbance:
@@ -777,6 +783,7 @@ class OccupancyDisturbance:
     occupancy_count: int = 0
     occupancy_fraction: float = 0.0
     activity_level: float = 1.0  # Metabolic activity multiplier
+    occupancy_forecast: List[float] = field(default_factory=list)
 
 
 @dataclass

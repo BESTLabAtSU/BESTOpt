@@ -5,7 +5,7 @@ Revised Electrical Supervisory Controller with improved structure and bug fixes
 import numpy as np
 from typing import Dict, Any, Optional, Tuple, List
 import logging
-from enum import Enum
+import json
 from dataclasses import dataclass, field
 
 from ..core.base import BaseModule
@@ -13,7 +13,7 @@ from ..core.data_structure import (
     DERSystemState, Disturbance, ClusterObservation, DERSystemAction, DomainState,SystemType,
     PVComponentState, BatteryComponentState, EVComponentState, DERMode, ComponentType
 )
-
+from ..controllers.llm_controller import LLMDERController
 
 class SupervisoryController(BaseModule):
     """
@@ -43,11 +43,11 @@ class SupervisoryController(BaseModule):
         self.bat_soc_reserve = config.get("bat_soc_reserve", 0.2)
 
         self.ev_soc_min = config.get("ev_soc_min", 0.2)
-        self.ev_soc_target = config.get("ev_soc_target", 0.8)
+        self.ev_soc_max = config.get("ev_soc_max", 0.8)
         self.ev_v2g_enabled = config.get("ev_v2g_enabled", True)
 
         # Power limits
-        self.max_grid_import = config.get("max_grid_import", 10000)  # Watts
+        self.max_grid_import = config.get("max_grid_import", 20000)  # Watts
         self.max_grid_export = config.get("max_grid_export", 5000)  # Watts
 
         # Default charging/discharging rates (will be overridden by component configs)
@@ -58,6 +58,26 @@ class SupervisoryController(BaseModule):
 
         # Grid status
         self.grid_connected = True
+
+        # Add LLM controller initialization
+        self.use_llm = config.get("use_llm", False)
+        if self.use_llm:
+            api_key = "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"
+            if not api_key:
+                raise ValueError("OpenAI API key required for LLM control")
+
+            self.llm_controller = LLMDERController(
+                api_key=api_key,
+                max_grid_import=self.max_grid_import / 1000,  # Convert to kW
+                max_grid_export=self.max_grid_export / 1000,
+                bat_soc_min=self.bat_soc_min,
+                bat_soc_max=self.bat_soc_max,
+                bat_soc_reserve=self.bat_soc_reserve,
+                ev_soc_min=self.ev_soc_min,
+                ev_soc_max=self.ev_soc_max,
+                ev_v2g_enabled=self.ev_v2g_enabled,
+                timestep_hours=0.25  # 15-minute timesteps
+            )
 
         # Component detection and configuration
         self._detect_and_configure_components()
@@ -84,8 +104,8 @@ class SupervisoryController(BaseModule):
         """
         try:
             system_state, building_state = observation
-            building_load = self._get_building_load(building_state)/1000 #kw
-            pv_generation = self._get_pv_generation(system_state)/1000 #kw
+            building_load = self._get_building_load(building_state)/1000  # kw
+            pv_generation = self._get_pv_generation(system_state)/1000  # kw
             DER_state = system_state.components
 
             # Get control signals
@@ -95,29 +115,37 @@ class SupervisoryController(BaseModule):
                 system_id=system_state.system_id,
                 system_type=SystemType.DER.value)
 
-            action = self.tou_control(
-                building_load, pv_generation, DER_state, is_peak, action
-            )
+            if self.use_llm:
+                # Get forecasts
+                forecast_peaksignal = disturbance.prices.forecast_peaksignal
+                forecast_outdoor_temp = disturbance.weather.forecast_outdoor_dry_bulb_temp
+                forecast_solar = disturbance.weather.forecast_solar_radiation_w_m2
 
-            # # Determine control strategy based on mode
-            # if not self.grid_connected or self.control_mode == DERMode.ISLANDED:
-            #     action = self._islanded_mode_control(
-            #         building_load, pv_generation_total,
-            #         battery_states, ev_states, disturbance
-            #     )
-            # elif self.control_mode == DERMode.TIME_OF_USE:
-            #     action = self._time_of_use_control(
-            #         building_load, pv_generation_total,
-            #         battery_states, ev_states, is_peak, disturbance
-            #     )
-            # else:  # SELF_CONSUMPTION mode (default)
-            #     action = self._self_consumption_control(
-            #         building_load, pv_generation_total,
-            #         battery_states, ev_states, disturbance
-            #     )
+                # Get or generate load forecast
+                load_forecast = self._get_load_forecast()
 
-            # Log decision
-            # self._log_control_decision(action, building_load, pv_generation_total)
+                # Use LLM controller - pass the action object to be modified
+                action, reasoning = self.llm_controller.get_control_action(
+                    action=action,  # Pass the pre-defined action
+                    building_load=building_load,
+                    pv_generation=pv_generation,
+                    der_state=DER_state,
+                    is_peak=is_peak,
+                    forecast_peaksignal=forecast_peaksignal,
+                    forecast_outdoor_temp=forecast_outdoor_temp,
+                    forecast_solar=forecast_solar,
+                    load_forecast=load_forecast
+                )
+
+                # Log reasoning
+                self.logger.info(f"LLM Strategy: {reasoning.get('strategy', 'N/A')}")
+                self.logger.debug(f"LLM Reasoning: {json.dumps(reasoning, indent=2)}")
+
+            else:
+                # Use existing rule-based control
+                action = self.tou_control(
+                    building_load, pv_generation, DER_state, is_peak, action
+                )
 
             return action
 
@@ -129,6 +157,29 @@ class SupervisoryController(BaseModule):
             system_id=state['der_system_1'].system_id,
             system_type=SystemType.DER.value
         )
+
+    def _get_load_forecast(self, noise_level: float = 0.05, bias: float = 0.02):
+        true_load = np.array([
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+            0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+            0.6, 0.6, 0.6, 1.65225412, 2.22834069, 3.599572, 4.27484051,
+            2.26060921, 3.599572, 2.30473647, 4.28630795, 3.599572,
+            4.3266618, 4.31140015, 3.599572, 4.35855564, 4.34306867, 0.,
+            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1.26954275,
+            1.2393136, 1.23620264, 0.95178742, 1.24185186, 0.80799366,
+            1.24646148, 0., 0., 0., 0., 0., 0., 1.22235219, 1.19179398,
+            1.18802125, 0.88245864, 1.18345206, 0., 0., 0., 0., 0., 0.,
+            1.1485885, 1.11523261, 1.10815843, 0.80480693, 0., 5.51868879,
+            6.21435277, 3.64574435, 5.06863093, 3.50055708, 4.799572,
+            3.51071597, 3.48493728, 2.799572, 3.51071597, 3.48493728, 2.4,
+            2.4, 2.4, 2.4, 2.4, 2.4, 2.4
+        ])
+        np.random.seed(42)  # for reproducibility
+        noise = np.random.normal(0, noise_level * np.mean(true_load), size=true_load.shape)
+        forecast = true_load * (1 + bias) + noise
+        forecast = np.clip(forecast, 0, None)  # no negative loads
+        return forecast
+
 
     def _detect_and_configure_components(self) -> None:
         """Detect and configure all components in the system."""
@@ -167,7 +218,7 @@ class SupervisoryController(BaseModule):
         return configs
 
     def _get_building_load(self, state: Any) -> float:
-        building_load = state.components['electrical'].building_power_w
+        building_load = state.components['electrical'].total_load_w
         return building_load  # Default fallback
 
     def _get_pv_generation(self, state: Any) -> float:
@@ -211,94 +262,66 @@ class SupervisoryController(BaseModule):
 
         return ev_states
 
-    def _self_consumption_control(self, building_load: float, pv_generation: float,
-                                  battery_states: Dict, ev_states: Dict,
-                                  disturbance: Disturbance) -> DERSystemAction:
-        """
-        Self-consumption mode: Maximize use of local generation.
-        Priority: PV → Building → Battery → EV → Grid Export
-        """
-        action = DERSystemAction()
-
-        # First use PV for building
-        pv_to_building = min(pv_generation, building_load)
-        action.pv2building = pv_to_building
-        remaining_pv = pv_generation - pv_to_building
-        remaining_load = building_load - pv_to_building
-
-        # If deficit, use batteries proportionally
-        if remaining_load > 0 and battery_states:
-            remaining_load = self._discharge_batteries_proportionally(
-                action, battery_states, remaining_load
-            )
-
-        # If still deficit, use EVs if available
-        if remaining_load > 0 and ev_states:
-            remaining_load = self._discharge_evs_proportionally(
-                action, ev_states, remaining_load
-            )
-
-        # If still deficit, import from grid
-        if remaining_load > 0:
-            action.grid2building = min(remaining_load, self.max_grid_import)
-
-        # If excess PV, charge batteries proportionally
-        if remaining_pv > 0 and battery_states:
-            remaining_pv = self._charge_batteries_proportionally(
-                action, battery_states, remaining_pv
-            )
-
-        # If still excess, charge EVs
-        if remaining_pv > 0 and ev_states:
-            remaining_pv = self._charge_evs_proportionally(
-                action, ev_states, remaining_pv
-            )
-
-        # Export remaining to grid
-        if remaining_pv > 0:
-            action.pv2grid = min(remaining_pv, self.max_grid_export)
-
-        return action
-
     def tou_control(self, building_load, pv_generation, DER_state, is_peak, action):
         """
-            DERSystemAction with all power flow decisions
+        DERSystemAction with all power flow decisions (kW everywhere).
         """
         # Organize components by type
         batteries = {k: v for k, v in DER_state.items() if 'bat' in k.lower()}
         evs = {k: v for k, v in DER_state.items() if 'ev' in k.lower()}
 
-        # Sort components by ID for consistent priority (use first, then another)
+        # Sort for consistent priority
         battery_ids = sorted(batteries.keys())
         ev_ids = sorted(evs.keys())
 
-        # Helper function to get available capacity
-        def get_capacity(component):
+        # Grid constrain
+        grid_import_constrain = float(self.max_grid_import) / 1000.0
+        grid_export_constrain = float(self.max_grid_export) / 1000.0
+
+        # Helper: capacity with SOC bounds
+        def get_capacity(component, comp_type: str):
             """
-            Calculate available charge/discharge capacity
-            C-rate: 0.25 means 25% of capacity per hour (4 hours to full charge)
+            Returns (max_charge_kw, max_discharge_kw) permitted this step.
+
+            Considers:
+              - C-rate power limits (kW)
+              - Energy window to SOC bounds (kWh) mapped to kW for a 1h step
+
             """
-            capacity_kwh = component.capacity_kwh
-            current_kwh = component.soc * capacity_kwh
+            capacity_kwh = float(getattr(component, "capacity_kwh"))
+            soc = float(getattr(component, "soc"))
+            charge_c = float(getattr(component, "charge_speed"))  # C-rate
+            discharge_c = float(getattr(component, "discharge_speed"))  # C-rate
 
-            # C-rate to kW: C-rate * capacity_kwh = kW
-            # e.g., 0.25C * 10kWh = 2.5kW charging power
-            max_charge_rate = component.charge_speed * capacity_kwh  # C-rate * capacity
-            max_discharge_rate = component.discharge_speed * capacity_kwh  # C-rate * capacity
+            # SOC limits (batteries use reserve during peak)
+            if comp_type == "bat":
+                soc_min = self.bat_soc_min
+                soc_max = self.bat_soc_max
+            else:  # "ev"
+                soc_min = self.ev_soc_min
+                soc_max = self.ev_soc_max
 
-            # Available energy to charge/discharge
-            energy_to_full = capacity_kwh - current_kwh
-            energy_available = current_kwh
+            # Clamp
+            soc_min = max(0.0, min(1.0, soc_min))
+            soc_max = max(0.0, min(1.0, soc_max))
 
-            # Actual capacity limited by both rate and available energy
-            max_charge = min(max_charge_rate, energy_to_full)
-            max_discharge = min(max_discharge_rate, energy_available)
+            # kW limits from C-rate
+            rate_charge_kw = charge_c * capacity_kwh
+            rate_discharge_kw = discharge_c * capacity_kwh
 
-            return max_charge, max_discharge
+            # Energy windows to bounds (kWh)
+            energy_to_max = max(0.0, (soc_max - soc) * capacity_kwh)
+            energy_above_min = max(0.0, (soc - soc_min) * capacity_kwh)
 
-        # Step 1: PV to building first (always prioritize self-consumption)
-        remaining_pv = pv_generation
-        remaining_load = building_load
+            # @todo replace 4 by resolution later
+            max_charge_kw = min(rate_charge_kw, energy_to_max/4)
+            max_discharge_kw = min(rate_discharge_kw, energy_above_min/4)
+
+            return max_charge_kw, max_discharge_kw
+
+        # Step 1: PV -> Building (self-consumption)
+        remaining_pv = max(0.0, pv_generation)  # kW
+        remaining_load = max(0.0, building_load)  # kW
 
         if remaining_pv > 0 and remaining_load > 0:
             pv_to_building = min(remaining_pv, remaining_load)
@@ -306,400 +329,97 @@ class SupervisoryController(BaseModule):
             remaining_pv -= pv_to_building
             remaining_load -= pv_to_building
 
-        # Step 2: Handle based on price period
+        # Step 2: Off-peak vs Peak behavior
         if not is_peak:
-            # OFF-PEAK: Charge batteries and EVs
-
-            # First use excess PV for charging (batteries first)
+            # -------- OFF-PEAK: charge up to SOC max --------
+            # Excess PV -> Batteries
             for bat_id in battery_ids:
-                if remaining_pv <= 0:
-                    break
+                if remaining_pv <= 0: break
                 bat = batteries[bat_id]
-                max_charge, _ = get_capacity(bat)
-                if max_charge > 0:
-                    charge_power = min(max_charge, remaining_pv)
+                max_charge_kw, _ = get_capacity(bat, "bat")
+                if max_charge_kw > 0:
+                    charge_power = min(max_charge_kw, remaining_pv)
                     action.pv2battery[bat_id] = charge_power
                     remaining_pv -= charge_power
 
-            # Then EVs with excess PV
+            # Excess PV -> EVs (only if connected/active)
             for ev_id in ev_ids:
-                if remaining_pv <= 0:
-                    break
+                if remaining_pv <= 0: break
                 ev = evs[ev_id]
-                if ev.is_active:
-                    max_charge, _ = get_capacity(ev)
-                    if max_charge > 0:
-                        charge_power = min(max_charge, remaining_pv)
+                if getattr(ev, "is_connected", True) and getattr(ev, "is_active", True):
+                    max_charge_kw, _ = get_capacity(ev, "ev")
+                    if max_charge_kw > 0:
+                        charge_power = min(max_charge_kw, remaining_pv)
                         action.pv2ev[ev_id] = charge_power
                         remaining_pv -= charge_power
 
-            # Charge from grid at C-rate speed (batteries first)
+            # Grid -> Batteries (respect import cap and SOC max)
             for bat_id in battery_ids:
+                if grid_import_constrain <= 0: break
                 bat = batteries[bat_id]
-                max_charge, _ = get_capacity(bat)
-                if max_charge > 0:
-                    # Use C-rate charging speed from grid
-                    charge_power = min(max_charge, bat.charge_speed * bat.capacity_kwh)
+                max_charge_kw, _ = get_capacity(bat, "bat")
+                if max_charge_kw > 0:
+                    charge_power = min(max_charge_kw, grid_import_constrain)
                     action.grid2battery[bat_id] = charge_power
+                    grid_import_constrain -= charge_power
 
-            # Then charge EVs from grid
+            # Grid -> EVs
             for ev_id in ev_ids:
+                if grid_import_constrain <= 0: break
                 ev = evs[ev_id]
-                if ev.is_active:
-                    max_charge, _ = get_capacity(ev)
-                    if max_charge > 0:
-                        charge_power = min(max_charge, ev.charge_speed * ev.capacity_kwh)
+                if getattr(ev, "is_connected", True) and getattr(ev, "is_active", True):
+                    max_charge_kw, _ = get_capacity(ev, "ev")
+                    if max_charge_kw > 0:
+                        charge_power = min(max_charge_kw, grid_import_constrain)
                         action.grid2ev[ev_id] = charge_power
+                        grid_import_constrain -= charge_power
 
-            # Send excess PV to grid if any
-            if remaining_pv > 0:
-                action.pv2grid = remaining_pv
+            # Any remaining PV -> Grid (export cap)
+            if remaining_pv > 0 and grid_export_constrain > 0:
+                to_grid = min(remaining_pv, grid_export_constrain)
+                action.pv2grid = to_grid
+                remaining_pv -= to_grid
+                grid_export_constrain -= to_grid
 
         else:
-            # PEAK: Discharge batteries and EVs to support building
-
-            # Discharge batteries first
+            # -------- PEAK: discharge down to reserve/floor --------
+            # Batteries -> Building
             for bat_id in battery_ids:
-                if remaining_load <= 0:
-                    break
+                if remaining_load <= 0: break
                 bat = batteries[bat_id]
-                _, max_discharge = get_capacity(bat)
-                if max_discharge > 0:
-                    discharge_power = min(max_discharge, remaining_load)
+                _, max_discharge_kw = get_capacity(bat, "bat")
+                if max_discharge_kw > 0:
+                    discharge_power = min(max_discharge_kw, remaining_load)
                     action.battery2building[bat_id] = discharge_power
                     remaining_load -= discharge_power
 
-            # Then discharge EVs if needed
-            for ev_id in ev_ids:
-                if remaining_load <= 0:
-                    break
-                ev = evs[ev_id]
-                if ev.is_active:
-                    _, max_discharge = get_capacity(ev)
-                    if max_discharge > 0:
-                        discharge_power = min(max_discharge, remaining_load)
-                        action.ev2building[ev_id] = discharge_power
-                        remaining_load -= discharge_power
+            # EVs -> Building (V2G must be enabled + connected/active)
+            if self.ev_v2g_enabled:
+                for ev_id in ev_ids:
+                    if remaining_load <= 0: break
+                    ev = evs[ev_id]
+                    if getattr(ev, "is_connected", True) and getattr(ev, "is_active", True):
+                        _, max_discharge_kw = get_capacity(ev, "ev")
+                        if max_discharge_kw > 0:
+                            discharge_power = min(max_discharge_kw, remaining_load)
+                            action.ev2building[ev_id] = discharge_power
+                            remaining_load -= discharge_power
 
-            # Send excess PV to grid (don't charge during peak)
-            if remaining_pv > 0:
-                action.pv2grid = remaining_pv
+            # During peak, don't charge; excess PV -> grid
+            if remaining_pv > 0 and grid_export_constrain > 0:
+                to_grid = min(remaining_pv, grid_export_constrain)
+                action.pv2grid = to_grid
+                remaining_pv -= to_grid
+                grid_export_constrain -= to_grid
 
-        # Step 3: Cover remaining building load from grid
-        if remaining_load > 0:
-            action.grid2building = remaining_load
-
-        return action
-
-
-    def _time_of_use_control(self, building_load: float, pv_generation: float,
-                             battery_states: Dict, ev_states: Dict,
-                             is_peak: bool, disturbance: Disturbance) -> DERSystemAction:
-        """
-        Time-of-use mode: Optimize based on peak/off-peak periods.
-        Peak: Minimize grid import, use storage
-        Off-peak: Charge storage from grid
-        """
-        action = DERSystemAction()
-
-        # Always use PV for building first
-        pv_to_building = min(pv_generation, building_load)
-        action.pv2building = pv_to_building
-        remaining_pv = pv_generation - pv_to_building
-        remaining_load = building_load - pv_to_building
-
-        if is_peak:
-            # PEAK: Discharge storage to minimize grid import
-            if remaining_load > 0 and battery_states:
-                remaining_load = self._discharge_batteries_proportionally(
-                    action, battery_states, remaining_load, reserve_soc=self.bat_soc_reserve
-                )
-
-            if remaining_load > 0 and ev_states and self.ev_v2g_enabled:
-                remaining_load = self._discharge_evs_proportionally(
-                    action, ev_states, remaining_load
-                )
-
-            # Use excess PV to charge storage
-            if remaining_pv > 0:
-                if battery_states:
-                    remaining_pv = self._charge_batteries_proportionally(
-                        action, battery_states, remaining_pv
-                    )
-                if remaining_pv > 0:
-                    action.pv2grid = min(remaining_pv, self.max_grid_export)
-
-            # Import from grid only if necessary
-            if remaining_load > 0:
-                action.grid2building = min(remaining_load, self.max_grid_import)
-
-        else:
-            # OFF-PEAK: Charge storage from grid
-            # Supply building from grid
-            if remaining_load > 0:
-                action.grid2building = remaining_load
-
-            # Charge batteries to max
-            if battery_states:
-                total_charge_needed = self._calculate_total_charge_needed(battery_states, self.bat_soc_max)
-                if total_charge_needed > 0:
-                    # Use PV first
-                    if remaining_pv > 0:
-                        pv_charge = min(remaining_pv, total_charge_needed)
-                        self._charge_batteries_proportionally(action, battery_states, pv_charge)
-                        remaining_pv -= pv_charge
-                        total_charge_needed -= pv_charge
-
-                    # Then use grid
-                    if total_charge_needed > 0:
-                        grid_charge = min(total_charge_needed, self.max_grid_import - action.grid2building)
-                        self._charge_batteries_from_grid(action, battery_states, grid_charge)
-
-            # Charge EVs
-            if ev_states:
-                total_ev_charge_needed = self._calculate_total_charge_needed(ev_states, self.ev_soc_target)
-                if total_ev_charge_needed > 0:
-                    # Use remaining PV
-                    if remaining_pv > 0:
-                        pv_charge = min(remaining_pv, total_ev_charge_needed)
-                        self._charge_evs_proportionally(action, ev_states, pv_charge)
-                        remaining_pv -= pv_charge
-                        total_ev_charge_needed -= pv_charge
-
-                    # Then use grid
-                    if total_ev_charge_needed > 0:
-                        current_grid_usage = action.grid2building + action.grid2battery
-                        grid_charge = min(total_ev_charge_needed, self.max_grid_import - current_grid_usage)
-                        self._charge_evs_from_grid(action, ev_states, grid_charge)
-
-            # Export any remaining PV
-            if remaining_pv > 0:
-                action.pv2grid = min(remaining_pv, self.max_grid_export)
+        # Step 3: Remaining load -> Grid (import cap)
+        if remaining_load > 0 and grid_import_constrain > 0:
+            grid_take = min(remaining_load, grid_import_constrain)
+            action.grid2building = grid_take
+            remaining_load -= grid_take
+            grid_import_constrain -= grid_take
 
         return action
-
-    def _islanded_mode_control(self, building_load: float, pv_generation: float,
-                               battery_states: Dict, ev_states: Dict,
-                               disturbance: Disturbance) -> DERSystemAction:
-        """
-        Islanded mode: No grid connection, careful resource management.
-        Priority: Critical loads only, preserve battery reserve
-        """
-        action = DERSystemAction()
-
-        # No grid flows in islanded mode
-        action.grid2building = 0
-        action.grid2battery = 0
-        action.grid2ev = 0
-        action.pv2grid = 0
-
-        # Use PV for building
-        pv_to_building = min(pv_generation, building_load)
-        action.pv2building = pv_to_building
-        remaining_pv = pv_generation - pv_to_building
-        remaining_load = building_load - pv_to_building
-
-        # Use batteries carefully (maintain reserve)
-        if remaining_load > 0 and battery_states:
-            remaining_load = self._discharge_batteries_proportionally(
-                action, battery_states, remaining_load,
-                reserve_soc=self.bat_soc_reserve * 1.5  # Higher reserve in islanded mode
-            )
-
-        # Use EV only if critical
-        if remaining_load > 0 and ev_states and self.ev_v2g_enabled:
-            # Only use if batteries are depleted
-            avg_bat_soc = self._get_average_soc(battery_states)
-            if avg_bat_soc < self.bat_soc_reserve * 2:
-                remaining_load = self._discharge_evs_proportionally(
-                    action, ev_states, remaining_load,
-                    reserve_soc=self.ev_soc_min + 0.1
-                )
-
-        # Store excess PV
-        if remaining_pv > 0:
-            if battery_states:
-                remaining_pv = self._charge_batteries_proportionally(
-                    action, battery_states, remaining_pv
-                )
-            if remaining_pv > 0 and ev_states:
-                remaining_pv = self._charge_evs_proportionally(
-                    action, ev_states, remaining_pv
-                )
-
-        # Log if load cannot be met
-        if remaining_load > 0:
-            self.logger.warning(f"Cannot meet {remaining_load:.1f}W of load in islanded mode")
-
-        # Log if PV is curtailed
-        if remaining_pv > 0:
-            self.logger.info(f"Curtailing {remaining_pv:.1f}W of PV in islanded mode")
-
-        return action
-
-    # Helper methods for proportional control
-
-    def _discharge_batteries_proportionally(self, action: DERSystemAction,
-                                           battery_states: Dict, power_needed: float,
-                                           reserve_soc: float = None) -> float:
-        """Discharge batteries proportionally based on available capacity."""
-        if reserve_soc is None:
-            reserve_soc = self.bat_soc_min
-
-        total_available = 0
-        available_per_battery = {}
-
-        # Calculate available discharge from each battery
-        for bat_id, bat_info in battery_states.items():
-            soc = bat_info['soc']
-            if soc > reserve_soc:
-                available_energy = (soc - reserve_soc) * bat_info['capacity_kwh'] * 1000  # Wh to W
-                available_power = min(available_energy, bat_info['max_discharge_rate'])
-                available_per_battery[bat_id] = available_power
-                total_available += available_power
-
-        if total_available == 0:
-            return power_needed
-
-        # Distribute discharge proportionally
-        power_allocated = min(power_needed, total_available)
-        remaining_power = power_needed - power_allocated
-
-        for bat_id, available_power in available_per_battery.items():
-            proportion = available_power / total_available
-            discharge_power = power_allocated * proportion
-            action.battery_commands[bat_id] = -discharge_power  # Negative for discharge
-
-        action.battery2building = power_allocated
-
-        return remaining_power
-
-    def _charge_batteries_proportionally(self, action: DERSystemAction,
-                                        battery_states: Dict, power_available: float) -> float:
-        """Charge batteries proportionally based on capacity headroom."""
-        total_headroom = 0
-        headroom_per_battery = {}
-
-        # Calculate charging headroom for each battery
-        for bat_id, bat_info in battery_states.items():
-            soc = bat_info['soc']
-            if soc < self.bat_soc_max:
-                headroom_energy = (self.bat_soc_max - soc) * bat_info['capacity_kwh'] * 1000
-                headroom_power = min(headroom_energy, bat_info['max_charge_rate'])
-                headroom_per_battery[bat_id] = headroom_power
-                total_headroom += headroom_power
-
-        if total_headroom == 0:
-            return power_available
-
-        # Distribute charging proportionally
-        power_allocated = min(power_available, total_headroom)
-        remaining_power = power_available - power_allocated
-
-        for bat_id, headroom_power in headroom_per_battery.items():
-            proportion = headroom_power / total_headroom
-            charge_power = power_allocated * proportion
-            if bat_id not in action.battery_commands:
-                action.battery_commands[bat_id] = 0
-            action.battery_commands[bat_id] += charge_power  # Positive for charge
-
-        action.pv2battery += power_allocated
-
-        return remaining_power
-
-    def _discharge_evs_proportionally(self, action: DERSystemAction,
-                                     ev_states: Dict, power_needed: float,
-                                     reserve_soc: float = None) -> float:
-        """Discharge connected EVs proportionally."""
-        if reserve_soc is None:
-            reserve_soc = self.ev_soc_min
-
-        total_available = 0
-        available_per_ev = {}
-
-        for ev_id, ev_info in ev_states.items():
-            if ev_info['connected'] and ev_info['soc'] > reserve_soc:
-                available_energy = (ev_info['soc'] - reserve_soc) * ev_info['capacity_kwh'] * 1000
-                available_power = min(available_energy, ev_info['max_discharge_rate'])
-                available_per_ev[ev_id] = available_power
-                total_available += available_power
-
-        if total_available == 0:
-            return power_needed
-
-        power_allocated = min(power_needed, total_available)
-        remaining_power = power_needed - power_allocated
-
-        for ev_id, available_power in available_per_ev.items():
-            proportion = available_power / total_available
-            discharge_power = power_allocated * proportion
-            action.ev_commands[ev_id] = -discharge_power
-
-        action.ev2building = power_allocated
-
-        return remaining_power
-
-    def _charge_evs_proportionally(self, action: DERSystemAction,
-                                  ev_states: Dict, power_available: float) -> float:
-        """Charge connected EVs proportionally."""
-        total_headroom = 0
-        headroom_per_ev = {}
-
-        for ev_id, ev_info in ev_states.items():
-            if ev_info['connected'] and ev_info['soc'] < self.ev_soc_target:
-                headroom_energy = (self.ev_soc_target - ev_info['soc']) * ev_info['capacity_kwh'] * 1000
-                headroom_power = min(headroom_energy, ev_info['max_charge_rate'])
-                headroom_per_ev[ev_id] = headroom_power
-                total_headroom += headroom_power
-
-        if total_headroom == 0:
-            return power_available
-
-        power_allocated = min(power_available, total_headroom)
-        remaining_power = power_available - power_allocated
-
-        for ev_id, headroom_power in headroom_per_ev.items():
-            proportion = headroom_power / total_headroom
-            charge_power = power_allocated * proportion
-            if ev_id not in action.ev_commands:
-                action.ev_commands[ev_id] = 0
-            action.ev_commands[ev_id] += charge_power
-
-        action.pv2ev += power_allocated
-
-        return remaining_power
-
-    def _charge_batteries_from_grid(self, action: DERSystemAction,
-                                   battery_states: Dict, power_available: float) -> float:
-        """Charge batteries from grid."""
-        remaining = self._charge_batteries_proportionally(action, battery_states, power_available)
-        action.grid2battery = power_available - remaining
-        return remaining
-
-    def _charge_evs_from_grid(self, action: DERSystemAction,
-                             ev_states: Dict, power_available: float) -> float:
-        """Charge EVs from grid."""
-        remaining = self._charge_evs_proportionally(action, ev_states, power_available)
-        action.grid2ev = power_available - remaining
-        return remaining
-
-    def _calculate_total_charge_needed(self, component_states: Dict, target_soc: float) -> float:
-        """Calculate total charging power needed to reach target SOC."""
-        total_needed = 0
-        for comp_id, comp_info in component_states.items():
-            if comp_info.get('connected', True):  # Default to True for batteries
-                soc_deficit = max(0, target_soc - comp_info['soc'])
-                energy_needed = soc_deficit * comp_info['capacity_kwh'] * 1000
-                power_needed = min(energy_needed, comp_info['max_charge_rate'])
-                total_needed += power_needed
-        return total_needed
-
-    def _get_average_soc(self, component_states: Dict) -> float:
-        """Get average SOC of components."""
-        if not component_states:
-            return 0.0
-        total_soc = sum(comp['soc'] for comp in component_states.values())
-        return total_soc / len(component_states)
 
     def _is_peak_period(self, disturbance: Disturbance) -> bool:
         """Check if current time is peak period."""

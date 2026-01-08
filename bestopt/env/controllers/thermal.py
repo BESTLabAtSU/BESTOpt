@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from ..core.base import BaseModule
 from ..core.data_structure import Disturbance, HVACSystemAction, HVACMode, SystemType
 from bestopt.env.core.constants import AIR_DENSITY, AIR_SPECIFIC_HEAT
-
+from ..controllers.llm_controller import LLMThermalController
 class SupervisoryController(BaseModule):
     """
     Rule-based thermal controller.
@@ -16,11 +16,14 @@ class SupervisoryController(BaseModule):
     def __init__(self, config: Dict[str, Any], name: str = "SupervisoryController"):
         """Initialize rule-based thermal controller."""
         super().__init__(config, name)
-
+        self.llm_controller = LLMThermalController(api_key="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")
         # Control parameters
         self.domain = config.get("domain", "thermal")
         self.mode = HVACMode(config.get("mode", "auto"))
         self.precool_config = config.get("precooling", None)
+        self.controller_type = config.get("controller_type", None)
+        if self.controller_type == 'llm':
+            self.llm_level = config.get("llm_level", None)
 
         # Comfort settings
         # @TODO These settings should be more dynamic in the future
@@ -84,12 +87,23 @@ class SupervisoryController(BaseModule):
             # @todo it can be updated to handle multizones temp later, this is a better way to do it
             current_temp = self._get_building_temp(building_state)
 
-            supply_air_flow_rate, supply_air_temperature = self._supervisory(
-                current_temp=current_temp,
-                cooling_setpoint=cooling_setpoint,
-                heating_setpoint=heating_setpoint,
-                timestep=timestep
-            )
+            if self.controller_type == "llm":
+                supply_air_flow_rate, supply_air_temperature, reasoning = self._llm_supervisory(
+                    current_temp=current_temp,
+                    history_info = self._get_history_info(building_state),
+                    cooling_setpoint=cooling_setpoint,
+                    heating_setpoint=heating_setpoint,
+                    timestep=timestep,
+                    disturbance=disturbance,
+                    level=self.llm_level,
+                )
+            else:
+                supply_air_flow_rate, supply_air_temperature = self._supervisory(
+                    current_temp=current_temp,
+                    cooling_setpoint=cooling_setpoint,
+                    heating_setpoint=heating_setpoint,
+                    timestep=timestep
+                )
 
             self.current_supply_air_flow_rate = supply_air_flow_rate
             self.current_supply_air_temperature = supply_air_temperature
@@ -120,6 +134,10 @@ class SupervisoryController(BaseModule):
                 system_id=state.system_id,
                 system_type=SystemType.HVAC.value
             )
+
+    def _get_history_info(self, state: Any) -> float:
+        history_info = state.components['zone0'].temperature_buffer
+        return history_info
 
     def _get_building_temp(self, state: Any) -> float:
         building_temp = state.components['zone0'].temperature #adjust this function later for more zones
@@ -154,6 +172,24 @@ class SupervisoryController(BaseModule):
             self.pre_hour = 0
 
         return cooling_setpoint, heating_setpoint
+
+    def _llm_supervisory(self, current_temp, history_info, cooling_setpoint,
+                         heating_setpoint, timestep, disturbance, level):
+        """
+        Wrapper method for LLM-based supervisory control with level selection.
+        """
+        supply_air_flow_rate, supply_air_temperature, reasoning = \
+            self.llm_controller.get_control_action(
+                current_temp=current_temp,
+                history_info=history_info,
+                cooling_setpoint=cooling_setpoint,
+                heating_setpoint=heating_setpoint,
+                timestep=timestep,
+                disturbance=disturbance,  # disturbance
+                level=level  # level from config
+            )
+
+        return supply_air_flow_rate, supply_air_temperature, reasoning
 
     def _supervisory(self, current_temp: float, cooling_setpoint: float,
                             heating_setpoint: float, timestep: float) -> float:
@@ -195,8 +231,11 @@ class SupervisoryController(BaseModule):
                 self.current_supply_air_flow_rate = 0
             else:
                 self.current_supply_air_flow_rate = 1
-
-        self.supply_air_temperature = 13
+        import random
+        x = 13 if random.random() < 0.9 else 24
+        x=13
+        self.supply_air_temperature = x
+        self.current_supply_air_flow_rate = 0.5
         return self.current_supply_air_flow_rate, self.supply_air_temperature
 
     # @Revise heating, auto later

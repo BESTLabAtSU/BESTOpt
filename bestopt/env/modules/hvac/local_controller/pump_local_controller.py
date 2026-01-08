@@ -13,10 +13,10 @@ class PumpLocalController(BaseModule):
         super().__init__(config, name)
 
         # P control + limits
-        self.Kp: float = float(config.get("Kp_flow_per_K", 2e-4))            # (m^3/s)/K
+        self.Kp: float = float(config.get("Kp_flow_per_K", 1e-4))            # (m^3/s)/K
         self.flow_min: float = float(config.get("flow_min_m3s", 0.0))
         self.flow_max: float = float(config.get("pump_flowrate_max", inf))
-        self.deadband: float = float(config.get("deadband_K", 0.2))          # K
+        self.deadband: float = float(config.get("deadband_K", 0.5))          # K
         self.rate_limit: float = float(config.get("rate_limit_m3s_per_s", 5e-5))  # m^3/s/s
         if self.flow_max <= 0:
             raise ValueError("pump_flowrate_max must be positive.")

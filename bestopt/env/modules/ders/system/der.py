@@ -241,39 +241,7 @@ class DERModule(BaseModule):
                     disturbance=disturbance,
                     timestep=timestep
                 )
-                # print(ev_state.soc)
-                # results['ev_results'][ev_id] = ev_results
-        #
-        # # Step 4: Calculate system-level metrics
-        # results['power_flows'] = {
-        #     'pv2building': action.pv2building,
-        #     'pv2battery': sum(action.pv2battery.values()) if action.pv2battery else 0,
-        #     'pv2ev': sum(action.pv2ev.values()) if action.pv2ev else 0,
-        #     'pv2grid': action.pv2grid,
-        #     'battery2building': sum(action.battery2building.values()) if action.battery2building else 0,
-        #     'ev2building': sum(action.ev2building.values()) if action.ev2building else 0,
-        #     'grid2building': action.grid2building,
-        #     'grid2battery': sum(action.grid2battery.values()) if action.grid2battery else 0,
-        #     'grid2ev': sum(action.grid2ev.values()) if action.grid2ev else 0,
-        # }
-        #
-        # # Calculate totals
-        # results['total_grid_import'] = (
-        #         action.grid2building +
-        #         sum(action.grid2battery.values()) +
-        #         sum(action.grid2ev.values())
-        # )
-        # results['total_grid_export'] = action.pv2grid
-        #
-        # results['total_building_supply'] = (
-        #         action.pv2building +
-        #         action.grid2building +
-        #         sum(action.battery2building.values()) +
-        #         sum(action.ev2building.values())
-        # )
-        #
-        # # Update system state timestamp
-        # state.timestamp = timestep
+
 
         return results
 

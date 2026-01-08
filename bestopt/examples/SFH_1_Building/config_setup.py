@@ -80,14 +80,14 @@ cm.add_system(
     parameters={
         "system_name": "FCU System",
         "system_config": {
-            "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000}, 
-            "fan_ctrl": {"ctrl_type": "staged", "stages": 10, "rated_flow_m3s": 1},
-            # "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000}, 
+            # "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000},
+            # "fan_ctrl": {"ctrl_type": "staged", "stages": 4, "rated_flow_m3s": 1},
+            # "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000},
             # "fan_ctrl": {"ctrl_type": "vfd", "rated_flow_m3s": 1},
-            # "fan": {"rated_flow_m3s": 0.4, "rated_power_W": 0.4 * 1000},
-            # "fan_ctrl": {"ctrl_type": "constant", "rated_flow_m3s": 0.4},
+            "fan": {"rated_flow_m3s": 0.4, "rated_power_W": 0.4 * 1000},
+            "fan_ctrl": {"ctrl_type": "constant", "rated_flow_m3s": 0.4},
             "coil": {"effectiveness": 0.7},
-            "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 1500},
+            "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 3000},
             "chiller": {"rated_capacity_W": 15000, "rated_cop": 4.5},
             "tower": {
                 "rated_capacity_W": 15000,
@@ -109,8 +109,8 @@ cm.add_system(
     parameters={
         "system_name": "PV-Battery-EV System",
         "system_config": {
-            "pv": {"rated_capacity_kW": 10},
-            "bat": {"rated_capacity_kWh": 5,
+            "pv": {"rated_capacity_kW": 20},
+            "bat": {"rated_capacity_kWh": 15,
                     "initial_soc": 0.3,
                     "charge_speed":0.25,
                     "discharge_speed":0.5,
@@ -159,7 +159,8 @@ cm.add_system_controller(
     system_id="hvac_system_1",
     parameters={
         "domain": "thermal",
-        "type": "rule-based",
+        "controller_type": "baseline",
+        "llm_level": 0,
         "mode": "cooling",
         "precooling": {"degree": 0, "hours": 0},
         "base_cooling": 24.0,
@@ -255,5 +256,5 @@ else:
 cm.print_summary()
 
 # Save configuration
-cm.save_final_configuration("config_setup.json")
+cm.save_final_configuration("llm_level_no.json")
 print("✓ Saved simulation configuration as config_setup.json")

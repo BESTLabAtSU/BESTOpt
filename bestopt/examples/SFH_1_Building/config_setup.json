@@ -35,13 +35,12 @@
         "system_name": "FCU System",
         "system_config": {
           "fan": {
-            "rated_flow_m3s": 1,
-            "rated_power_W": 1000
+            "rated_flow_m3s": 0.4,
+            "rated_power_W": 400.0
           },
           "fan_ctrl": {
-            "ctrl_type": "staged",
-            "stages": 10,
-            "rated_flow_m3s": 1
+            "ctrl_type": "constant",
+            "rated_flow_m3s": 0.4
           },
           "coil": {
             "effectiveness": 0.7
@@ -77,10 +76,10 @@
         "system_name": "PV-Battery-EV System",
         "system_config": {
           "pv": {
-            "rated_capacity_kW": 10
+            "rated_capacity_kW": 20
           },
           "bat": {
-            "rated_capacity_kWh": 5,
+            "rated_capacity_kWh": 15,
             "initial_soc": 0.3,
             "charge_speed": 0.25,
             "discharge_speed": 0.5,
@@ -122,7 +121,8 @@
       "domain": "thermal",
       "parameters": {
         "domain": "thermal",
-        "type": "rule-based",
+        "controller_type": "llm",
+        "llm_level": 1,
         "mode": "cooling",
         "precooling": {
           "degree": 0,
@@ -180,14 +180,14 @@
           "startday": 1,
           "trainday": 180,
           "testday": 1,
-          "datapath": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\BLDG\\clean\\SFH_1.csv",
+          "datapath": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv",
           "temp_unit": "C",
           "device": "cpu",
           "save_name": "SFH_1"
         },
-        "model_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\examples\\Saved\\SFH_1\\Trained_mdlEnco48_Deco96\\PI-modnn_180daysTest_on07-01.pth",
-        "scaler_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\examples\\Scaler\\SFH_1\\ModNN_scaler.pkl",
-        "historical_data_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\BLDG\\clean\\SFH_1.csv",
+        "model_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Saved/SFH_1/Trained_mdlEnco48_Deco96/PI-modnn_180daysTest_on07-01.pth",
+        "scaler_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/examples/Scaler/SFH_1/ModNN_scaler.pkl",
+        "historical_data_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/BLDG/clean/SFH_1.csv",
         "encoder_length": 48,
         "retrain": "Off",
         "simulation_start_time": "2023-08-01 00:00:00"
@@ -229,14 +229,14 @@
   "disturbances": {
     "weather": {
       "parameters": {
-        "file_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\DIST\\weather\\weather.csv",
+        "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/weather/weather.csv",
         "simulation_start_time": "2023-08-01 00:00:00"
       },
       "class_path": "bestopt.env.disturbances.weather.WeatherModule"
     },
     "occupancy": {
       "parameters": {
-        "file_path": "c:\\Users\\rzhsong\\OneDrive\\TAMU\\CODE\\BEST_OPT\\bestopt\\data\\SFH\\DIST\\occupancy\\occupancy.csv",
+        "file_path": "/home/zjiang19/Documents/GitHub/BEST_OPT/bestopt/data/SFH/DIST/occupancy/occupancy.csv",
         "simulation_start_time": "2023-08-01 00:00:00"
       },
       "class_path": "bestopt.env.disturbances.occupancy.OccupancyModule"

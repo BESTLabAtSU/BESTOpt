@@ -30,7 +30,7 @@ class PriceModule(BaseModule):
             name: Module name
         """
         super().__init__(config, name)
-        self.current_price = PriceSignals()
+        self.price_signal = PriceSignals()
 
     def initialize(self) -> None:
         self.peak_start = 17 * 4
@@ -40,16 +40,18 @@ class PriceModule(BaseModule):
         self.daily_price = daily_price
         daily_peaksignal = np.zeros(96, dtype=bool)
         daily_peaksignal[self.peak_start:self.peak_end] = True
+        daily_peaksignal = np.tile(daily_peaksignal, 2)
         self.daily_peaksignal = daily_peaksignal
 
     def step(self, current_step: int) -> Optional[PriceSignals]:
         step_of_day = current_step % 96
-        self.current_price.electricity_price = self.daily_price[step_of_day]
-        self.current_price.peaksignal = self.daily_peaksignal[step_of_day]
-        self.current_price.peak_start = self.peak_start
-        self.current_price.peak_end = self.peak_end
+        self.price_signal.electricity_price = self.daily_price[step_of_day]
+        self.price_signal.peaksignal = self.daily_peaksignal[step_of_day]
+        self.price_signal.peak_start = self.peak_start
+        self.price_signal.peak_end = self.peak_end
+        self.price_signal.forecast_peaksignal = self.daily_peaksignal[step_of_day:step_of_day+96]
 
-        return self.current_price
+        return self.price_signal
 
     def reset(self) -> None:
         pass
