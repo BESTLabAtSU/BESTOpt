@@ -1,5 +1,5 @@
 from bestopt.env.modules.hvac.component.chiller import ChillerModule
-from bestopt.env.core.data_structure import ChillerState, ThermalAction, PumpState, CoilState, CoolingTowerState
+from bestopt.env.core.data_structure import ChillerComponentState, ChillerComponentAction, PumpComponentState, CoilComponentState, CoolingTowerComponentState
 
 # Configuration for chiller
 cfg = {
@@ -10,7 +10,6 @@ cfg = {
     "max_cop": 10.0,
     "min_chws_temp_c": 5.0,
     "max_chws_temp_c": 10.0,
-    "enable_history": True
 }
 
 # Instantiate the chiller
@@ -18,10 +17,10 @@ chiller = ChillerModule(cfg, name="main_chiller")
 chiller.initialize()
 
 # Create state instances
-cs = ChillerState(component_id="main_chiller", component_type="", domain="")
-coil_state = CoilState()
-pump_state = PumpState()
-cooling_tower_state = CoolingTowerState()
+cs = ChillerComponentState(component_id="main_chiller", component_type="chiller", system_id="")
+coil_state = CoilComponentState(component_id="chw_coil", component_type="coil", system_id="")
+pump_state = PumpComponentState(component_id="chw_pump", component_type="pump", system_id="")
+cooling_tower_state = CoolingTowerComponentState(component_id="ctower", component_type="cooling_tower", system_id="")
 
 # Simulated schedules
 chw_return_schedule = [12.0, 12.5, 13.0, 12.0, 11.5, 11.0,
@@ -43,8 +42,8 @@ for t in range(24):
     pump_state.waterflow_m3s = chw_flow_schedule[t]
     cooling_tower_state.cw_supply_temp_c=cond_temp_schedule[t]
         
-    act = ThermalAction(
-        chws_temp_c_sp=chws_sp_schedule[t],
+    act = ChillerComponentAction(component_id="main_chiller", component_type="chiller",
+        chws_temp_setpoint_c=chws_sp_schedule[t],
     )
 
     chiller.step(cs, action=act, coil_state=coil_state, pump_state=pump_state, cooling_tower_state=cooling_tower_state, timestep=dt_sec)
