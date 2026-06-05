@@ -51,7 +51,7 @@ class SupervisoryController(BaseModule):
         self.logger.info(f"Initialized thermal controller: {self.name}")
 
     def step(self, state: Any, observation: Any, disturbance: Disturbance,
-             timestep: float) -> HVACSystemAction:
+             timestep: float, external_action: Optional[HVACSystemAction] = None) -> HVACSystemAction:
         """
         Determine thermal control action based on current conditions.
 
@@ -81,29 +81,39 @@ class SupervisoryController(BaseModule):
             #             self.logger.warning("No zone temperatures in observation")
             #@TODO need to write an observation function to translate state to obs, not only for thermal, but for other domain as well
             system_state, building_state = observation
-            # Determine active setpoints based on occupancy
-            cooling_setpoint, heating_setpoint = self._get_active_setpoints(disturbance, self.precool_config)
 
             # @todo it can be updated to handle multizones temp later, this is a better way to do it
             current_temp = self._get_building_temp(building_state)
 
-            if self.controller_type == "llm":
-                supply_air_flow_rate, supply_air_temperature, reasoning = self._llm_supervisory(
-                    current_temp=current_temp,
-                    history_info = self._get_history_info(building_state),
-                    cooling_setpoint=cooling_setpoint,
-                    heating_setpoint=heating_setpoint,
-                    timestep=timestep,
-                    disturbance=disturbance,
-                    level=self.llm_level,
-                )
+            # Check if external action provides setpoints, else use rule-based
+            if external_action and external_action.cooling_setpoint_c:
+                cooling_setpoint = external_action.cooling_setpoint_c
+                heating_setpoint = external_action.heating_setpoint_c
             else:
-                supply_air_flow_rate, supply_air_temperature = self._supervisory(
-                    current_temp=current_temp,
-                    cooling_setpoint=cooling_setpoint,
-                    heating_setpoint=heating_setpoint,
-                    timestep=timestep
-                )
+                cooling_setpoint, heating_setpoint = self._get_active_setpoints(disturbance, self.precool_config)
+
+            if external_action and external_action.supply_airflow_setpoint_m3s:
+                supply_air_flow_rate = external_action.supply_airflow_setpoint_m3s
+                supply_air_temperature = external_action.supply_temp_setpoint_c
+            else:
+                # Use your existing supervisory logic
+                if self.controller_type == "llm":
+                    supply_air_flow_rate, supply_air_temperature, _ = self._llm_supervisory(
+                        current_temp=current_temp,
+                        history_info=self._get_history_info(building_state),
+                        cooling_setpoint=cooling_setpoint,
+                        heating_setpoint=heating_setpoint,
+                        timestep=timestep,
+                        disturbance=disturbance,
+                        level=self.llm_level,
+                    )
+                else:
+                    supply_air_flow_rate, supply_air_temperature = self._supervisory(
+                        current_temp=current_temp,
+                        cooling_setpoint=cooling_setpoint,
+                        heating_setpoint=heating_setpoint,
+                        timestep=timestep
+                    )
 
             self.current_supply_air_flow_rate = supply_air_flow_rate
             self.current_supply_air_temperature = supply_air_temperature
@@ -231,11 +241,12 @@ class SupervisoryController(BaseModule):
                 self.current_supply_air_flow_rate = 0
             else:
                 self.current_supply_air_flow_rate = 1
-        import random
-        x = 13 if random.random() < 0.9 else 24
-        x=13
-        self.supply_air_temperature = x
-        self.current_supply_air_flow_rate = 0.5
+        # import random
+        # x = 13 if random.random() < 0.9 else 24
+        # x=13
+        # self.supply_air_temperature = x
+        self.supply_air_temperature = 13
+        # self.current_supply_air_flow_rate = 0.5
         return self.current_supply_air_flow_rate, self.supply_air_temperature
 
     # @Revise heating, auto later

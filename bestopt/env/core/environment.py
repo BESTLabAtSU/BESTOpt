@@ -454,7 +454,7 @@ class BESTOptEnvironment:
                 external_actions.get(cluster_id, ClusterAction(cluster_id=cluster_id))
 
             # Update observation for current state
-            self._update_cluster_observation(cluster_id, cluster_state)
+            # self._update_cluster_observation(cluster_id, cluster_state)
 
             # Execute systems in dependency order with interleaved control
             self._execute_cluster_systems_ordered(cluster_id, cluster_state, cluster_action)
@@ -530,15 +530,20 @@ class BESTOptEnvironment:
                 # Pass water thermal demand to controller via observation or state
                 if hasattr(thermal_controller, 'set_water_thermal_demand'):
                     water_demand = sum(self.state_manager.cache.get('water_thermal_demand', {}).values())
-                    # PLace holder
+                    # @TODO PLace holder
                     thermal_controller.set_water_thermal_demand(water_demand)
+                # Retrieve external HVAC action from cluster_action
+                external_hvac = cluster_action.thermal.system_actions.get(system_id)
 
                 thermal_action = thermal_controller.step(
                     state=cluster_state.thermal.systems[system_id],
-                    observation=(cluster_state.electrical.systems[system_id], cluster_state.electrical.systems[building_id]), #@todo again, need obs function
+                    observation=(cluster_state.electrical.systems[system_id],
+                                 cluster_state.electrical.systems[building_id]),
                     disturbance=self.disturbance,
-                    timestep=self.current_step
+                    timestep=self.current_step,
+                    external_action=external_hvac
                 )
+
                 cluster_action.thermal.system_actions[system_id] = thermal_action
 
                 # Execute HVAC system immediately
@@ -598,6 +603,8 @@ class BESTOptEnvironment:
         for system_id in der_systems:
             # Find the building that system support
             building_id = f"{self.system_building_map[system_id][0]}_building"
+            # Retrieve external DER action from cluster_action
+            external_der = cluster_action.electrical.system_actions.get(system_id)
 
             if system_id in self.system_controllers:
                 electrical_controller = self.system_controllers[system_id]
@@ -605,8 +612,10 @@ class BESTOptEnvironment:
                     state=cluster_state.electrical.systems[system_id], #@todo In the early stage, I didn't separate state/obs clearly just for simplifacation, now we need to gradually update these functions
                     observation=(cluster_state.electrical.systems[system_id], cluster_state.electrical.systems[building_id]),
                     disturbance=self.disturbance,
-                    timestep=self.current_step
+                    timestep=self.current_step,
+                    external_action=external_der
                 )
+
                 cluster_action.electrical.system_actions[system_id] = electrical_action
                 #
                 # Execute DER system immediately
@@ -699,7 +708,7 @@ class BESTOptEnvironment:
 
     def _get_cluster_action(self, cluster_id: str, cluster_state: ClusterState) -> ClusterAction:
         """Get control actions for all systems in cluster."""
-        self._update_cluster_observation(cluster_id, cluster_state)
+        # self._update_cluster_observation(cluster_id, cluster_state)
         cluster_action = ClusterAction(cluster_id=cluster_id)
 
         # Get actions for each domain's systems
@@ -870,21 +879,30 @@ class BESTOptEnvironment:
                     if hasattr(hvac_module, 'FCU_power_total_W'):
                         hvac_load_total = hvac_module.FCU_power_total_W
 
-                # Process each zone with its share of HVAC load
-                for zone_id, zone_state in system_state.components.items():
-                    if zone_state.component_type == ComponentType.ELECTRICAL_ZONE:
-                        zone_key = f"{building_id}.{zone_id}"
-                        # @ todo the name and structure need to be revised!
-                        # @ todo need to check the name for multi-building cluster, forget if it can work or not
-                        zone_module = self.electrical_zone_modules['SFH_1.zone0']
-                        building_power = zone_module.step(
-                            disturbance=self.disturbance,
-                            timestep=self.current_step
-                        )
-                        #@todo should update inside the module step
-                        zone_state.total_load_w = building_power + hvac_load_total
-                        zone_state.hvac_load_w = hvac_load_total
-                        zone_state.building_power_w = building_power
+                building_config = self.buildings_config.get(building_id, {})
+                electrical_zones = building_config.get('electrical_zones', ['zone0'])
+
+                for ez_id in electrical_zones:
+                    module_key = f"{building_id}.{ez_id}"
+
+                    if module_key not in self.electrical_zone_modules:
+                        self.logger.warning(
+                            f"No electrical zone module for {module_key}")
+                        continue
+
+                    zone_module = self.electrical_zone_modules[module_key]
+                    building_power = zone_module.step(
+                        disturbance=self.disturbance,
+                        timestep=self.current_step
+                    )
+
+                # Update the electrical zone component state in the building
+                # (the component is stored under key 'electrical')
+                elec_comp = system_state.components.get('electrical')
+                if elec_comp is not None:
+                    elec_comp.total_load_w = building_power + hvac_load_total
+                    elec_comp.hvac_load_w = hvac_load_total
+                    elec_comp.building_power_w = building_power
 
     def _update_building_loads(self, cluster_state: ClusterState):
         """Update electrical loads based on HVAC and building operations."""
@@ -957,7 +975,7 @@ class BESTOptEnvironment:
                     )
 
     def _update_cluster_observation(self, cluster_id: str, cluster_state: ClusterState):
-        """Update observation for cluster with individual zone temperatures."""
+        """Update observation for cluster with complete metrics from all domains."""
         obs = self.cluster_observations[cluster_id]
 
         # Time information
@@ -966,8 +984,11 @@ class BESTOptEnvironment:
         obs.day_of_year = int((self.current_step * self.res / 86400)) % 365 + 1
         obs.timestamp = self.current_step * self.res
 
-        # Store zone temperatures in thermal observation metrics
+        # ========== THERMAL DOMAIN ==========
         zone_temperatures = {}
+        zone_humidity = {}
+        total_heat_gain = 0.0
+
         for system_id, system_state in cluster_state.thermal.systems.items():
             if system_state.system_type == SystemType.BUILDING:
                 building_id = system_id.replace('_building', '')
@@ -975,46 +996,265 @@ class BESTOptEnvironment:
                     if component.component_type == ComponentType.THERMAL_ZONE:
                         zone_key = f"{building_id}.{comp_id}"
                         zone_temperatures[zone_key] = component.temperature
+                        zone_humidity[zone_key] = component.humidity_pct
+                        total_heat_gain += component.heat_gain_w
 
-        # Store all zone temperatures in thermal observation
-        obs.thermal.aggregated_metrics['zone_temperatures'] = zone_temperatures
-
-        # Update domain observations with actual metrics
-        for domain_type in [DomainType.ELECTRICAL, DomainType.THERMAL, DomainType.WATER]:
-            domain_state = cluster_state.get_domain(domain_type)
-            domain_obs = getattr(obs, domain_type.value)
-
-            # Update system observations
-            for system_id, system_state in domain_state.systems.items():
-                # Create system observation if needed
-                if system_id not in domain_obs.system_observations:
-                    domain_obs.system_observations[system_id] = SystemObservation(
-                        system_id=system_id,
-                        system_type=system_state.system_type
+            elif system_state.system_type == SystemType.HVAC:
+                if system_id not in obs.thermal.system_observations:
+                    obs.thermal.system_observations[system_id] = SystemObservation(
+                        system_id=system_id, system_type=system_state.system_type
                     )
+                hvac_obs = obs.thermal.system_observations[system_id]
 
-                # Update metrics
+                for comp_id, comp in system_state.components.items():
+                    if comp.component_type == ComponentType.FAN:
+                        hvac_obs.component_states[comp_id] = {
+                            'airflow_m3s': comp.airflow_m3s,
+                            'power_W': comp.power_W,
+                            'speed_fraction': comp.speed_fraction
+                        }
+                    elif comp.component_type == ComponentType.COIL:
+                        hvac_obs.component_states[comp_id] = {
+                            'Q_W': comp.Q_W,
+                            'air_inlet_temp_c': comp.air_inlet_temp_c,
+                            'air_outlet_temp_c': comp.air_outlet_temp_c,
+                            'water_inlet_temp_c': comp.water_inlet_temp_c,
+                            'water_outlet_temp_c': comp.water_outlet_temp_c,
+                            'waterflow_m3s': comp.waterflow_m3s
+                        }
+                    elif comp.component_type == ComponentType.CHILLER:
+                        hvac_obs.component_states[comp_id] = {
+                            'cooling_capacity_w': comp.cooling_capacity_w,
+                            'power_W': comp.power_W,
+                            'cop': comp.cop,
+                            'chws_temp_c': comp.chws_temp_c,
+                            'chwr_temp_c': comp.chwr_temp_c
+                        }
+                    elif comp.component_type == ComponentType.COOLING_TOWER:
+                        hvac_obs.component_states[comp_id] = {
+                            'heat_rejected_w': comp.heat_rejected_w,
+                            'cw_supply_temp_c': comp.cw_supply_temp_c,
+                            'fan_power_W': comp.fan_power_W,
+                            'pump_power_W': comp.pump_power_W
+                        }
+                    elif comp.component_type == ComponentType.PUMP:
+                        hvac_obs.component_states[comp_id] = {
+                            'waterflow_m3s': comp.waterflow_m3s,
+                            'power_W': comp.power_W
+                        }
+
                 system_state.update_domain_metrics()
-                system_obs = domain_obs.system_observations[system_id]
+                hvac_obs.metrics.update({
+                    'total_cooling_W': system_state.domain_metrics.get(DomainType.THERMAL, {}).get('cooling', 0.0),
+                    'total_power_W': system_state.domain_metrics.get(DomainType.ELECTRICAL, {}).get('power', 0.0),
+                    'total_airflow_m3s': system_state.domain_metrics.get(DomainType.THERMAL, {}).get('airflow', 0.0)
+                })
 
-                # Store domain-specific metrics
-                if domain_type in system_state.domain_metrics:
-                    system_obs.metrics.update(system_state.domain_metrics[domain_type])
+        obs.thermal.aggregated_metrics = {
+            'zone_temperatures': zone_temperatures,
+            'zone_humidity': zone_humidity,
+            'avg_zone_temperature': sum(zone_temperatures.values()) / len(
+                zone_temperatures) if zone_temperatures else 0.0,
+            'total_heat_gain_W': total_heat_gain,
+            'num_zones': len(zone_temperatures)
+        }
 
-                # Store component states
-                for comp_id, comp_state in system_state.components.items():
-                    if comp_state.component_type == ComponentType.THERMAL_ZONE:
-                        system_obs.component_states[comp_id] = {
-                            'temperature': comp_state.temperature,
+        # ========== ELECTRICAL DOMAIN ==========
+        total_pv_generation = 0.0
+        total_battery_power = 0.0
+        total_ev_power = 0.0
+        total_building_load = 0.0
+        total_hvac_load = 0.0
+        total_base_load = 0.0
+
+        # Individual component tracking (stored separately)
+        battery_soc = {}  # {comp_id: soc}
+        battery_power = {}  # {comp_id: power_w}
+        battery_capacity = {}  # {comp_id: capacity_kwh}
+        battery_details = {}  # {comp_id: full_dict}
+
+        ev_soc = {}  # {comp_id: soc}
+        ev_power = {}  # {comp_id: power_w}
+        ev_connected = {}  # {comp_id: is_connected}
+        ev_details = {}  # {comp_id: full_dict}
+
+        pv_generation = {}  # {comp_id: generation_w}
+        pv_details = {}  # {comp_id: full_dict}
+
+        building_load_details = {}  # {building_id: full_dict}
+
+        for system_id, system_state in cluster_state.electrical.systems.items():
+            system_state.update_domain_metrics()
+
+            if system_state.system_type == SystemType.DER:
+                if system_id not in obs.electrical.system_observations:
+                    obs.electrical.system_observations[system_id] = SystemObservation(
+                        system_id=system_id, system_type=system_state.system_type
+                    )
+                der_obs = obs.electrical.system_observations[system_id]
+
+                for comp_id, comp in system_state.components.items():
+                    if comp.component_type == ComponentType.PV:
+                        # Individual PV tracking
+                        pv_generation[comp_id] = comp.generation_w
+                        pv_details[comp_id] = {
+                            'generation_w': comp.generation_w,
+                            'cell_temperature_c': comp.cell_temperature_c,
+                            'efficiency': comp.efficiency,
+                            'degradation_factor': comp.degradation_factor
                         }
-                    elif comp_state.component_type == ComponentType.ELECTRICAL_ZONE:
-                        system_obs.component_states[comp_id] = {
-                            'total_load_w': comp_state.total_load_w
-                        }
+                        total_pv_generation += comp.generation_w
+                        der_obs.component_states[comp_id] = pv_details[comp_id]
 
-        # Set forecasts
+                    elif comp.component_type == ComponentType.BATTERY:
+                        # Individual battery tracking
+                        battery_soc[comp_id] = comp.soc
+                        battery_power[comp_id] = comp.power_w
+                        battery_capacity[comp_id] = comp.capacity_kwh
+                        battery_details[comp_id] = {
+                            'soc': comp.soc,
+                            'power_w': comp.power_w,
+                            'capacity_kwh': comp.capacity_kwh,
+                            'energy_kwh': comp.soc * comp.capacity_kwh,
+                            'efficiency': comp.efficiency,
+                            'charge_speed': comp.charge_speed,
+                            'discharge_speed': comp.discharge_speed,
+                            'temperature': comp.temperature
+                        }
+                        total_battery_power += comp.power_w
+                        der_obs.component_states[comp_id] = battery_details[comp_id]
+
+                    elif comp.component_type == ComponentType.EV:
+                        # Individual EV tracking
+                        ev_soc[comp_id] = comp.soc
+                        ev_power[comp_id] = comp.power_w
+                        ev_connected[comp_id] = comp.is_active
+                        ev_details[comp_id] = {
+                            'soc': comp.soc,
+                            'power_w': comp.power_w,
+                            'capacity_wh': comp.capacity_wh,
+                            'charge_speed': comp.charge_speed,
+                            'discharge_speed': comp.discharge_speed,
+                            'charge_efficiency': comp.charge_efficiency,
+                            'is_connected': comp.is_active,
+                            'initially_connected': comp.initially_connected
+                        }
+                        total_ev_power += comp.power_w
+                        der_obs.component_states[comp_id] = ev_details[comp_id]
+
+                # DER system-level metrics
+                der_obs.metrics = {
+                    'total_pv_generation_w': sum(pv_generation.values()),
+                    'total_battery_power_w': sum(battery_power.values()),
+                    'total_ev_power_w': sum(ev_power.values())
+                }
+
+            elif system_state.system_type == SystemType.BUILDING:
+                building_id = system_id.replace('_building', '')
+
+                if system_id not in obs.electrical.system_observations:
+                    obs.electrical.system_observations[system_id] = SystemObservation(
+                        system_id=system_id, system_type=system_state.system_type
+                    )
+                bldg_obs = obs.electrical.system_observations[system_id]
+
+                for comp_id, comp in system_state.components.items():
+                    if comp.component_type == ComponentType.ELECTRICAL_ZONE:
+                        building_load_details[building_id] = {
+                            'total_load_w': comp.total_load_w,
+                            'hvac_load_w': comp.hvac_load_w,
+                            'building_power_w': comp.building_power_w,
+                            'lighting_load_w': comp.lighting_load_w,
+                            'plug_load_w': comp.plug_load_w
+                        }
+                        total_building_load += comp.total_load_w
+                        total_hvac_load += comp.hvac_load_w
+                        total_base_load += comp.building_power_w
+                        bldg_obs.component_states[comp_id] = building_load_details[building_id]
+
+                bldg_obs.metrics = building_load_details.get(building_id, {})
+
+            elif system_state.system_type == SystemType.HVAC:
+                if system_id not in obs.electrical.system_observations:
+                    obs.electrical.system_observations[system_id] = SystemObservation(
+                        system_id=system_id, system_type=system_state.system_type
+                    )
+                hvac_elec_obs = obs.electrical.system_observations[system_id]
+                hvac_elec_obs.metrics = {
+                    'total_power_W': system_state.domain_metrics.get(DomainType.ELECTRICAL, {}).get('power', 0.0)
+                }
+
+        # Net grid power (positive = importing, negative = exporting)
+        net_grid_power = (total_building_load + total_battery_power + total_ev_power) - total_pv_generation
+
+        # Store electrical aggregated metrics with INDIVIDUAL component data
+        obs.electrical.aggregated_metrics = {
+            # ===== PV (Individual + Total) =====
+            'pv_generation': pv_generation,  # {comp_id: generation_w}
+            'pv_details': pv_details,  # {comp_id: {full details}}
+            'total_pv_generation_w': total_pv_generation,
+
+            # ===== Battery (Individual + Total) =====
+            'battery_soc': battery_soc,  # {comp_id: soc}
+            'battery_power': battery_power,  # {comp_id: power_w}
+            'battery_capacity': battery_capacity,  # {comp_id: capacity_kwh}
+            'battery_details': battery_details,  # {comp_id: {full details}}
+            'total_battery_power_w': total_battery_power,
+            'total_battery_capacity_kwh': sum(battery_capacity.values()),
+            'avg_battery_soc': sum(battery_soc.values()) / len(battery_soc) if battery_soc else 0.0,
+            'num_batteries': len(battery_soc),
+
+            # ===== EV (Individual + Total) =====
+            'ev_soc': ev_soc,  # {comp_id: soc}
+            'ev_power': ev_power,  # {comp_id: power_w}
+            'ev_connected': ev_connected,  # {comp_id: is_connected}
+            'ev_details': ev_details,  # {comp_id: {full details}}
+            'total_ev_power_w': total_ev_power,
+            'avg_ev_soc': sum(ev_soc.values()) / len(ev_soc) if ev_soc else 0.0,
+            'num_evs': len(ev_soc),
+            'num_evs_connected': sum(1 for v in ev_connected.values() if v),
+
+            # ===== Building Loads (Individual + Total) =====
+            'building_loads': building_load_details,  # {building_id: {full details}}
+            'total_building_load_w': total_building_load,
+            'total_hvac_load_w': total_hvac_load,
+            'total_base_load_w': total_base_load,
+
+            # ===== Grid Interaction =====
+            'net_grid_power_w': net_grid_power,
+            'is_exporting': net_grid_power < 0,
+            'self_consumption_ratio': min(total_pv_generation,
+                                          total_building_load) / total_pv_generation if total_pv_generation > 0 else 0.0
+        }
+
+        # ========== WATER DOMAIN ==========
+        total_water_demand = 0.0
+        water_zone_details = {}
+
+        for system_id, system_state in cluster_state.water.systems.items():
+            system_state.update_domain_metrics()
+
+            if system_state.system_type == SystemType.BUILDING:
+                building_id = system_id.replace('_building', '')
+                for comp_id, comp in system_state.components.items():
+                    if comp.component_type == ComponentType.WATER_ZONE:
+                        water_zone_details[building_id] = {
+                            'hot_water_demand_w': comp.hot_water_demand_w
+                        }
+                        total_water_demand += comp.hot_water_demand_w
+
+        obs.water.aggregated_metrics = {
+            'water_zone_details': water_zone_details,
+            'total_hot_water_demand_w': total_water_demand
+        }
+
+        # ========== FORECASTS ==========
+        # @TODO can replace by my disturbance forecast package
         obs.weather_forecast = [self.disturbance.weather] * 4
-        obs.price_forecast = [self.disturbance.grid.electricity_price] * 4
+        if hasattr(self.disturbance.prices, 'electricity_price'):
+            obs.price_forecast = [self.disturbance.prices.electricity_price] * 4
+        else:
+            obs.price_forecast = [self.disturbance.grid.electricity_price] * 4
         obs.occupancy_forecast = [self.disturbance.occupancy.occupancy_fraction] * 4
 
     def _collect_step_info(self) -> Dict[str, Any]:
@@ -1071,6 +1311,10 @@ class BESTOptEnvironment:
         self.cluster_actions.clear()
         self.cluster_observations.clear()
         self._initialize_clusters()
+
+        # register again
+        for system_id, module in self.system_modules.items():
+            self._state_registration(system_id, module)
 
         # Reset state manager
         self.state_manager = StateManager(self.config, self.cluster_states)

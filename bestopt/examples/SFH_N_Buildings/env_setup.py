@@ -411,7 +411,7 @@ if __name__ == "__main__":
     PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(PROJECT_ROOT_PATH))
     # Load configuration
     config_path = os.path.join(PROJECT_ROOT_PATH, "examples", "SFH_N_Buildings", "config_setup_5buildings.json")
-    building_data, env = run_multi_building_simulation(config_path=config_path, max_steps=96)
+    building_data, env = run_multi_building_simulation(config_path=config_path, max_steps=96*3)
 
     # Create plots
     print("\nGenerating visualizations...")

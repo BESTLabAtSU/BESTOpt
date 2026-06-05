@@ -101,7 +101,7 @@ class BaseModule(ABC):
         Get current module state as dictionary.
 
         Example keys: {"indoor_temp": 22.5, "SOC": 0.8}
-        Used for evaluation, saving, and debugging.
+        Used for evaluation_old, saving, and debugging.
         """
         return {}
 

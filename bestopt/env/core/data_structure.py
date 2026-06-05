@@ -631,24 +631,42 @@ class HVACSystemAction(SystemAction):
 
 @dataclass
 class DERSystemAction(SystemAction):
-    """DER system control action."""
+    """
+    DER system control action - Simplified Power Flow Model.
+
+    Philosophy:
+    - Power cannot be distinguished by source (electrons are fungible)
+    - Only battery charge/discharge is controllable
+    - EV charging is automatic when connected (tracked but not controlled)
+    - Net grid = total_demand + battery_power - pv_generation
+
+    Sign conventions:
+    - battery_power: positive = charging, negative = discharging [kW]
+    - grid_import: always >= 0 (no export allowed) [kW]
+    - curtailment: excess PV that cannot be used [kW]
+    """
+
+    # Control mode
     mode: str = "TIME_OF_USE"  # SELF_CONSUMPTION, TIME_OF_USE, DEMAND_RESPONSE
 
-    pv2building: float = 0.0
-    pv2grid: float = 0.0
+    # === CONTROLLABLE ===
+    # Battery power command: positive = charge, negative = discharge [kW]
+    battery_power: Dict[str, float] = field(default_factory=dict)  # {bat_id: power_kw}
 
-    # Dictionary fields for multiple component IDs
-    pv2battery: Dict[str, float] = field(default_factory=dict)  # {bat_id: power}
-    pv2ev: Dict[str, float] = field(default_factory=dict)  # {ev_id: power}
+    # === TRACKED (not controlled, computed by controller) ===
+    # EV charging power (automatic when connected) [kW]
+    ev_charging: Dict[str, float] = field(default_factory=dict)  # {ev_id: power_kw}
 
-    battery2building: Dict[str, float] = field(default_factory=dict)
-    battery2ev: Dict[str, Dict[str, float]] = field(default_factory=dict)  # {bat_id: {ev_id: power}}
+    # === RESULTS ===
+    # Net grid import [kW] (always >= 0 if no export allowed)
+    grid_import: float = 0.0
 
-    ev2building: Dict[str, float] = field(default_factory=dict)
+    # Curtailed PV power [kW] (excess that cannot be exported or stored)
+    curtailment: float = 0.0
 
-    grid2building: float = 0.0
-    grid2battery: Dict[str, float] = field(default_factory=dict)
-    grid2ev: Dict[str, float] = field(default_factory=dict)
+    # === OPTIONAL: for detailed analysis ===
+    # Power balance breakdown (can store PowerBalance dataclass or dict)
+    power_balance: Optional[Any] = None
 
 
 @dataclass

@@ -147,6 +147,8 @@ class BatteryModule(BaseModule):
             # Update state
             state.soc = new_soc
             state.temperature = self.current_temperature
+            state.power_w = power_actual * 1000
+
         except:
             print("error")
 

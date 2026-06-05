@@ -80,19 +80,19 @@ cm.add_system(
     parameters={
         "system_name": "FCU System",
         "system_config": {
-            # "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000},
-            # "fan_ctrl": {"ctrl_type": "staged", "stages": 4, "rated_flow_m3s": 1},
+            "fan": {"rated_flow_m3s": 0.5, "rated_power_W": 1 * 1000},
+            "fan_ctrl": {"ctrl_type": "staged", "stages": 4, "rated_flow_m3s": 1},
             # "fan": {"rated_flow_m3s": 1, "rated_power_W": 1 * 1000},
             # "fan_ctrl": {"ctrl_type": "vfd", "rated_flow_m3s": 1},
-            "fan": {"rated_flow_m3s": 0.4, "rated_power_W": 0.4 * 1000},
-            "fan_ctrl": {"ctrl_type": "constant", "rated_flow_m3s": 0.4},
+            # "fan": {"rated_flow_m3s": 0.3, "rated_power_W": 0.4 * 1000},
+            # "fan_ctrl": {"ctrl_type": "constant", "rated_flow_m3s": 0.3},
             "coil": {"effectiveness": 0.7},
             "pump": {"rated_flow_m3s": 0.01, "rated_power_W": 3000},
-            "chiller": {"rated_capacity_W": 15000, "rated_cop": 4.5},
+            "chiller": {"rated_capacity_W": 2000, "rated_cop": 3},
             "tower": {
-                "rated_capacity_W": 15000,
+                "rated_capacity_W": 2000,
                 "rated_fan_power_W": 400,
-                "pump_power_per_flow": 85000,
+                "pump_power_per_flow": 2000,
                 "min_approach_C": 3.0,
                 "max_approach_C": 7.0
             }
@@ -109,7 +109,7 @@ cm.add_system(
     parameters={
         "system_name": "PV-Battery-EV System",
         "system_config": {
-            "pv": {"rated_capacity_kW": 20},
+            "pv": {"rated_capacity_kW": 10},
             "bat": {"rated_capacity_kWh": 15,
                     "initial_soc": 0.3,
                     "charge_speed":0.25,
@@ -119,7 +119,7 @@ cm.add_system(
                 {
                     "id": "ev_tesla",
                     "rated_capacity_kWh": 60,
-                    "initial_soc": 0.2,
+                    "initial_soc": 0.5,
                     "charge_speed":0.25,
                     "discharge_speed":0.5,
                     "charge_efficiency":0.95,
@@ -128,14 +128,13 @@ cm.add_system(
                 {
                     "id": "ev_nissan",
                     "rated_capacity_kWh": 40,
-                    "initial_soc": 0.8,
+                    "initial_soc": 0.5,
                     "charge_speed":0.25,
                     "discharge_speed":0.5,
                     "charge_efficiency":0.95,
                     "initially_connected": False
                 }
-            ]
-        }
+            ]        }
     },
     class_path="bestopt.env.modules.ders.system.der.DERModule"
 )
@@ -160,7 +159,7 @@ cm.add_system_controller(
     parameters={
         "domain": "thermal",
         "controller_type": "baseline",
-        "llm_level": 0,
+        "llm_level": 'no',
         "mode": "cooling",
         "precooling": {"degree": 0, "hours": 0},
         "base_cooling": 24.0,
@@ -178,24 +177,17 @@ cm.add_system_controller(
     system_id="der_system_1",
     parameters={
         "domain": "electrical",
-        "type": "rule-based",
         "mode": "self_consumption",
         "bat_soc_min": 0.1,
         "bat_soc_max": 0.9,
         "ev_soc_min": 0.2,
-        "ev_soc_target": 0.8,
-        "ev_v2g_enabled": True,
-        "max_grid_import": 10000,
-        "max_grid_export": 5000,
-        "system_config": {
-            "pv": {"rated_capacity_kW": 2},
-            "bat": {"rated_capacity_kWh": 5, "initial_soc": 0.3},
-            "ev": {"rated_capacity_kWh": 5, "initial_soc": 0.3}
-        }
+        "ev_soc_max": 0.9,
+        "max_grid_import": 30000,
+        "allow_grid_export": False,
+        "timestep_hours": 0.25
     },
     class_path="bestopt.env.controllers.electrical.SupervisoryController"
 )
-
 
 cm.add_disturbance(
     "weather",
@@ -256,5 +248,5 @@ else:
 cm.print_summary()
 
 # Save configuration
-cm.save_final_configuration("llm_level_no.json")
+cm.save_final_configuration("config_setup.json")
 print("✓ Saved simulation configuration as config_setup.json")

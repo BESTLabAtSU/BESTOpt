@@ -35,20 +35,24 @@ class ElectricalDynamicModule(BaseModule):
 
 
     def step(self, disturbance: Disturbance, timestep: int) -> Dict[str, Any]:
-        occ_status= disturbance.occupancy.occupancy_fraction
+        occ_status = disturbance.occupancy.occupancy_fraction
+
+        # Use time-of-day step, not global timestep
+        step_of_day = timestep % (24 * 4)  # assuming 15-min resolution = 96 steps/day
+
         lighting_power = 0
-        print(timestep)
-        if timestep<= 24*4 and timestep>= 18*4:
+        if step_of_day >= 18 * 4 and step_of_day <= 24 * 4:
             lighting_power = self.lighting_night
-        if timestep <= 10 * 4 and timestep >= 6 * 4:
+        if step_of_day >= 6 * 4 and step_of_day <= 10 * 4:
             lighting_power = self.lighting_day
+
         cooking_power = 0
-        if timestep <= 9 * 4 + np.random.randint(-4, 4) and timestep >= 7 * 4 + np.random.randint(-4, 4):
+        if step_of_day >= 7 * 4 + np.random.randint(-4, 4) and step_of_day <= 9 * 4 + np.random.randint(-4, 4):
             cooking_power = self.cooking
-        if timestep <= 20 * 4 + np.random.randint(-4, 4) and timestep >= 17 * 4 + np.random.randint(-4, 4):
+        if step_of_day >= 17 * 4 + np.random.randint(-4, 4) and step_of_day <= 20 * 4 + np.random.randint(-4, 4):
             cooking_power = self.cooking
-        # print(lighting_power, self.pc, self.tv, cooking_power)
-        building_power = occ_status*(lighting_power+self.pc+self.tv+cooking_power)
+
+        building_power = occ_status * (lighting_power + self.pc + self.tv + cooking_power)
         self.building_power = building_power
         self.lighting_power = lighting_power*occ_status
         self.pc_power = self.pc * occ_status

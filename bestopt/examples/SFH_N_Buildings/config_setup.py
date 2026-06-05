@@ -21,7 +21,7 @@ PROJECT_ROOT_PATH = os.path.dirname(os.path.dirname(PROJECT_ROOT_PATH))
 # ===========================
 
 # Number of buildings to configure
-N_BUILDINGS = 5
+N_BUILDINGS = 10
 
 # Base parameters that will be varied for each building
 BASE_PARAMS = {

@@ -35,28 +35,29 @@
         "system_name": "FCU System",
         "system_config": {
           "fan": {
-            "rated_flow_m3s": 0.4,
-            "rated_power_W": 400.0
+            "rated_flow_m3s": 0.5,
+            "rated_power_W": 1000
           },
           "fan_ctrl": {
-            "ctrl_type": "constant",
-            "rated_flow_m3s": 0.4
+            "ctrl_type": "staged",
+            "stages": 4,
+            "rated_flow_m3s": 1
           },
           "coil": {
             "effectiveness": 0.7
           },
           "pump": {
             "rated_flow_m3s": 0.01,
-            "rated_power_W": 1500
+            "rated_power_W": 3000
           },
           "chiller": {
-            "rated_capacity_W": 15000,
-            "rated_cop": 4.5
+            "rated_capacity_W": 2000,
+            "rated_cop": 3
           },
           "tower": {
-            "rated_capacity_W": 15000,
+            "rated_capacity_W": 2000,
             "rated_fan_power_W": 400,
-            "pump_power_per_flow": 85000,
+            "pump_power_per_flow": 2000,
             "min_approach_C": 3.0,
             "max_approach_C": 7.0
           }
@@ -76,7 +77,7 @@
         "system_name": "PV-Battery-EV System",
         "system_config": {
           "pv": {
-            "rated_capacity_kW": 20
+            "rated_capacity_kW": 10
           },
           "bat": {
             "rated_capacity_kWh": 15,
@@ -89,7 +90,7 @@
             {
               "id": "ev_tesla",
               "rated_capacity_kWh": 60,
-              "initial_soc": 0.2,
+              "initial_soc": 0.5,
               "charge_speed": 0.25,
               "discharge_speed": 0.5,
               "charge_efficiency": 0.95,
@@ -98,7 +99,7 @@
             {
               "id": "ev_nissan",
               "rated_capacity_kWh": 40,
-              "initial_soc": 0.8,
+              "initial_soc": 0.5,
               "charge_speed": 0.25,
               "discharge_speed": 0.5,
               "charge_efficiency": 0.95,
@@ -121,8 +122,8 @@
       "domain": "thermal",
       "parameters": {
         "domain": "thermal",
-        "controller_type": "llm",
-        "llm_level": 1,
+        "controller_type": "baseline",
+        "llm_level": "no",
         "mode": "cooling",
         "precooling": {
           "degree": 0,
@@ -141,28 +142,14 @@
       "domain": "electrical",
       "parameters": {
         "domain": "electrical",
-        "type": "rule-based",
         "mode": "self_consumption",
         "bat_soc_min": 0.1,
         "bat_soc_max": 0.9,
         "ev_soc_min": 0.2,
-        "ev_soc_target": 0.8,
-        "ev_v2g_enabled": true,
-        "max_grid_import": 10000,
-        "max_grid_export": 5000,
-        "system_config": {
-          "pv": {
-            "rated_capacity_kW": 2
-          },
-          "bat": {
-            "rated_capacity_kWh": 5,
-            "initial_soc": 0.3
-          },
-          "ev": {
-            "rated_capacity_kWh": 5,
-            "initial_soc": 0.3
-          }
-        }
+        "ev_soc_max": 0.9,
+        "max_grid_import": 30000,
+        "allow_grid_export": false,
+        "timestep_hours": 0.25
       },
       "class_path": "bestopt.env.controllers.electrical.SupervisoryController"
     }

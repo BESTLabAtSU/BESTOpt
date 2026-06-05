@@ -42,6 +42,25 @@ class EVModule(BaseModule):
         """
         super().__init__(config, name)
 
+        # Driving behavior configuration
+        self.driving_power_kw = config.get("driving_power_kw", 15.0)  # Average power while driving
+        self.driving_speed_kmh = config.get("driving_speed_kmh", 40.0)  # Average urban speed
+        self.consumption_kwh_per_km = config.get("consumption_kwh_per_km", 0.18)  # Typical EV efficiency
+
+        # Trip simulation parameters
+        self.avg_trip_distance_km = config.get("avg_trip_distance_km", 15.0)  # One-way trip
+        self.min_rest_duration_hours = config.get("min_rest_duration_hours", 0.5)  # Min parking time
+        self.max_rest_duration_hours = config.get("max_rest_duration_hours", 4.0)  # Max parking time
+
+        # Driving state tracking
+        _initially_connected = config.get("initially_connected", True)
+        self._prev_occupancy = 1.0 if _initially_connected else 0.0
+        self._is_driving = False
+        self._driving_time_remaining = 0.0
+        self._rest_time_remaining = 0.0
+        self._trip_phase = "home" if _initially_connected else "away_parked"
+        self._total_trip_energy = 0.0
+
         # EV specifications
         self.capacity_kwh = config.get("rated_capacity_kWh", 60.0)  # Battery capacity in kWh
         self.nominal_voltage = config.get("nominal_voltage", 400.0)  # Volts
@@ -109,84 +128,211 @@ class EVModule(BaseModule):
         """
         Execute EV charging/discharging for current timestep.
 
-        Args:
-            state: Current EV state
-            action: Dictionary with 'net_power_kw' key
-            disturbance: Current disturbances
-            timestep: Current simulation timestep
-
-        Returns:
-            Updated EV state
+        Handles:
+        - Normal charging when connected at home
+        - Dynamic driving simulation when away (drive/rest cycles)
+        - Realistic energy consumption based on distance/speed
         """
         try:
-            # Update connection status based on schedule
-            # self._update_connection_status(state, timestep)
-            #
-            # # If disconnected, no power transfer possible
-            # if not state.is_active:
-            #     state.power_w = 0.0
-            #     state.operation_mode = "DISCONNECTED"
-            #     self.status = EVStatus.DISCONNECTED
-            #     return state
-
-            # Get power command from action
-            power_command_kw = action.get('net_power_kw', 0.0)
-
-            # Apply operational constraints
-            # power_actual_kw = self._apply_constraints(power_command_kw, state.soc)
-            power_actual_kw = power_command_kw
-            if power_actual_kw==0.0 and disturbance.occupancy.occupancy_fraction==0:
-                power_actual_kw = -10
-
-            # Calculate timestep duration in hours
             timestep_hours = 900 / 3600  # 15 minutes = 0.25 hours
 
-            # Calculate energy transferred
-            energy_delta_kwh = self._calculate_energy_transfer(power_actual_kw, timestep_hours)
+            # Get current occupancy
+            current_occupancy = getattr(disturbance.occupancy, 'occupancy_fraction', 1.0)
 
-            # Update SOC
-            new_soc = self._update_soc(state.soc, energy_delta_kwh)
+            # Handle occupancy transitions and driving behavior
+            driving_power_kw = self._update_driving_state(current_occupancy, timestep_hours)
 
-            # Apply self-discharge
-            new_soc = self._apply_self_discharge(new_soc, timestep_hours)
+            # Determine actual power based on whether driving or at home
+            if self._trip_phase in ("departing", "returning") and self._is_driving:
+                # Currently driving - consume energy
+                power_actual_kw = 0.0  # No grid power while driving
+                driving_energy_kwh = driving_power_kw * timestep_hours
 
-            # Update state
-            state.soc = new_soc
-            # state.power_w = power_actual_kw * 1000  # Convert to Watts
+                # Update SOC from driving
+                soc_loss = driving_energy_kwh / self.capacity_kwh
+                new_soc = max(self.soc_min, state.soc - soc_loss)
+                self._total_trip_energy += driving_energy_kwh
 
-            # Update operation mode and status
-            # if power_actual_kw > 0.1:  # Charging (threshold to avoid noise)
-            #     state.operation_mode = "CHARGING"
-            #     self.status = EVStatus.CHARGING
-            # elif power_actual_kw < -0.1:  # Discharging
-            #     state.operation_mode = "V2G"
-            #     self.status = EVStatus.DISCHARGING
-            # else:
-            #     state.operation_mode = "IDLE"
-            #     self.status = EVStatus.CONNECTED_IDLE
-            #
-            # # Update cumulative metrics
-            # if power_actual_kw > 0:
-            #     self.total_energy_charged_kwh += energy_delta_kwh
-            # else:
-            #     self.total_energy_discharged_kwh += abs(energy_delta_kwh)
-            #
-            # # Log significant operations
-            # if abs(power_actual_kw) > 1.0:  # Only log > 1kW operations
-            #     operation = "Charging" if power_actual_kw > 0 else "V2G"
-            #     self.logger.debug(
-            #         f"{operation}: {abs(power_actual_kw):.1f}kW, "
-            #         f"SOC: {new_soc:.1%}, "
-            #         f"Status: {self.status.value}"
-            #     )
+                self.logger.debug(
+                    f"Driving: {driving_power_kw:.1f}kW, "
+                    f"SOC: {state.soc:.1%} -> {new_soc:.1%}, "
+                    f"Phase: {self._trip_phase}"
+                )
+
+                state.soc = new_soc
+                state.is_connected = False
+                state.operation_mode = "DRIVING"
+
+            elif self._trip_phase == "away_parked":
+                # Parked away from home - no charging (could add workplace charging here)
+                power_actual_kw = 0.0
+                state.is_connected = False
+                state.operation_mode = "PARKED_AWAY"
+
+                # Apply minimal self-discharge while parked
+                state.soc = self._apply_self_discharge(state.soc, timestep_hours)
+
+            else:
+                # At home - normal charging/V2G behavior
+                state.is_connected = True
+                power_command_kw = action.get('net_power_kw', 0.0)
+
+                # Apply operational constraints
+                power_actual_kw = self._apply_constraints(power_command_kw, state.soc)
+
+                # Calculate energy transferred
+                energy_delta_kwh = self._calculate_energy_transfer(power_actual_kw, timestep_hours)
+
+                # Update SOC
+                new_soc = self._update_soc(state.soc, energy_delta_kwh)
+                new_soc = self._apply_self_discharge(new_soc, timestep_hours)
+
+                state.soc = new_soc
+
+                # Update operation mode
+                if power_actual_kw > 0.1:
+                    state.operation_mode = "CHARGING"
+                    self.status = EVStatus.CHARGING
+                elif power_actual_kw < -0.1:
+                    state.operation_mode = "V2G"
+                    self.status = EVStatus.DISCHARGING
+                else:
+                    state.operation_mode = "IDLE"
+                    self.status = EVStatus.CONNECTED_IDLE
+
+                # Update cumulative metrics
+                if power_actual_kw > 0:
+                    self.total_energy_charged_kwh += energy_delta_kwh
+                elif power_actual_kw < 0:
+                    self.total_energy_discharged_kwh += abs(energy_delta_kwh)
+
+            # Store power for external reference
+            state.power_w = power_actual_kw * 1000
+
+            # Update internal tracking
+            self.current_soc = state.soc
+            self.is_connected = state.is_connected
 
         except Exception as e:
             self.logger.error(f"Error in EV step calculation: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             self.status = EVStatus.FAULT
             self.fault_message = str(e)
             state.power_w = 0.0
 
         return state
+
+    def _update_driving_state(self, current_occupancy: float, timestep_hours: float) -> float:
+        """
+        Update driving state machine and return current driving power consumption.
+
+        State machine:
+        - home: Person at home, EV connected
+        - departing: Person left, EV driving to destination (with rest stops)
+        - away_parked: Arrived at destination, parked
+        - returning: Person coming back, EV driving home (with rest stops)
+
+        Returns:
+            Driving power in kW (0 if not currently driving)
+        """
+        prev_occupancy = self._prev_occupancy
+        self._prev_occupancy = current_occupancy
+
+        # Detect occupancy transitions
+        person_left = prev_occupancy > 0.5 and current_occupancy <= 0.5
+        person_returned = prev_occupancy <= 0.5 and current_occupancy > 0.5
+
+        # State transitions based on occupancy changes
+        if person_left and self._trip_phase == "home":
+            # Start departure trip
+            self._trip_phase = "departing"
+            self._start_drive_segment()
+            self._total_trip_energy = 0.0
+            self.logger.info(f"EV departing - starting trip, SOC: {self.current_soc:.1%}")
+
+        elif person_returned and self._trip_phase in ("away_parked", "departing"):
+            # Start return trip
+            self._trip_phase = "returning"
+            self._start_drive_segment()
+            self.logger.info(f"EV returning home, SOC: {self.current_soc:.1%}")
+
+        # Process current driving/rest state
+        driving_power = 0.0
+
+        if self._trip_phase in ("departing", "returning"):
+            if self._is_driving:
+                # Currently driving
+                self._driving_time_remaining -= timestep_hours
+                driving_power = self._get_driving_power()
+
+                if self._driving_time_remaining <= 0:
+                    # Finished this drive segment
+                    if self._trip_phase == "departing":
+                        # Arrived at destination
+                        self._trip_phase = "away_parked"
+                        self._start_rest_period()
+                        self.logger.info(
+                            f"Arrived at destination, parking. Trip energy: {self._total_trip_energy:.2f} kWh")
+                    else:
+                        # Arrived home
+                        self._trip_phase = "home"
+                        self._is_driving = False
+                        self.logger.info(f"Arrived home. Total trip energy: {self._total_trip_energy:.2f} kWh")
+
+            else:
+                # Currently resting/stopped during trip
+                self._rest_time_remaining -= timestep_hours
+
+                if self._rest_time_remaining <= 0:
+                    # Rest over, continue driving
+                    self._start_drive_segment()
+
+        elif self._trip_phase == "away_parked":
+            # Parked at destination, waiting for return signal
+            self._rest_time_remaining -= timestep_hours
+            # Could add random errand trips here if desired
+
+        return driving_power
+
+    def _start_drive_segment(self) -> None:
+        """Initialize a new driving segment."""
+        self._is_driving = True
+
+        # Calculate drive time based on distance and speed
+        # Add some randomness (±30%)
+        distance = self.avg_trip_distance_km * (0.7 + 0.6 * np.random.random())
+        drive_time = distance / self.driving_speed_kmh
+
+        self._driving_time_remaining = drive_time
+
+        self.logger.debug(f"Starting drive segment: {distance:.1f}km, {drive_time * 60:.1f}min")
+
+    def _start_rest_period(self) -> None:
+        """Initialize a rest/parking period."""
+        self._is_driving = False
+
+        # Random rest duration between min and max
+        rest_duration = self.min_rest_duration_hours + \
+                        (self.max_rest_duration_hours - self.min_rest_duration_hours) * np.random.random()
+
+        self._rest_time_remaining = rest_duration
+
+        self.logger.debug(f"Starting rest period: {rest_duration * 60:.1f}min")
+
+    def _get_driving_power(self) -> float:
+        """
+        Get current driving power consumption with some variability.
+
+        Simulates varying driving conditions (acceleration, cruising, traffic).
+        """
+        # Base consumption from efficiency and speed
+        base_power = self.consumption_kwh_per_km * self.driving_speed_kmh
+
+        # Add variability (±40%) to simulate real driving
+        variability = 0.6 + 0.8 * np.random.random()
+
+        return base_power * variability
 
     def _update_connection_status(self, state: EVComponentState, timestep: int) -> None:
         """
@@ -390,6 +536,16 @@ class EVModule(BaseModule):
         self.total_energy_charged_kwh = 0.0
         self.total_energy_discharged_kwh = 0.0
         self.total_sessions = 0
+
+        # Reset driving state
+        _initially_connected = self.config.get("initially_connected", True)
+        self._prev_occupancy = 1.0 if _initially_connected else 0.0
+        self._is_driving = False
+        self._driving_time_remaining = 0.0
+        self._rest_time_remaining = 0.0
+        self._trip_phase = "home" if _initially_connected else "away_parked"
+        self._total_trip_energy = 0.0
+
         self.status = EVStatus.CONNECTED_IDLE if self.is_connected else EVStatus.DISCONNECTED
         self.fault_message = ""
         self.logger.debug(f"Reset EV module: {self.name}")

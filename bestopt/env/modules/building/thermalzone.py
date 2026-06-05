@@ -208,6 +208,8 @@ class ThermalDynamicsModule(BaseModule):
             # Use exactly the last encoder_length timesteps
             warmup_data = warmup_data.iloc[-self.encoder_length:]
 
+            self.initial_temp = warmup_data.iloc[-1]["temp_room"]
+
             # Fill encoder buffer with historical data
             self.history_buffer.clear()
             for _, row in warmup_data.iterrows():

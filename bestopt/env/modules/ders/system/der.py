@@ -1,5 +1,10 @@
 """
-DER System Module - Orchestrates PV, Battery, and EV component modules
+DER System Module - Simplified Power Flow Model
+
+Key changes from old version:
+- battery_power: positive = charge, negative = discharge [kW]
+- ev_charging: automatic charging power when connected [kW]
+- No more pv2battery, grid2battery, etc. - just net power commands
 """
 from typing import Dict, Any, Tuple, Optional
 from bestopt.env.core.base import BaseModule
@@ -54,7 +59,13 @@ class ComponentRegistry:
 
 class DERModule(BaseModule):
     """
-    DER System using ComponentRegistry for module-state management.
+    DER System using simplified power flow model.
+
+    Power Flow Philosophy:
+    - Electrons are fungible (can't distinguish PV vs grid power)
+    - Only battery charge/discharge is controllable
+    - EV charging is automatic when connected
+    - Controller computes: grid_import = demand + battery_power - pv_generation
     """
 
     def __init__(self, config: Dict[str, Any], name: str = "der_system"):
@@ -85,6 +96,8 @@ class DERModule(BaseModule):
                          f"{len(self.ev_configs)} EV configs")
 
     def register_component_state(self, state: DERSystemState):
+        """Register all components and their initial states."""
+
         # Create PV components
         for pv_id, pv_config in self.pv_configs.items():
             module, component_state = self.registry.create_component(
@@ -94,7 +107,6 @@ class DERModule(BaseModule):
                 system_id=state.system_id
             )
 
-            # Store module and state
             self.pv_modules[pv_id] = module
             self.pv_states[pv_id] = component_state
             state.components[pv_id] = component_state
@@ -109,11 +121,11 @@ class DERModule(BaseModule):
                 config=bat_config,
                 system_id=state.system_id,
             )
-            component_state.soc = self.battery_configs[bat_id]['initial_soc']
-            component_state.capacity_kwh = self.battery_configs[bat_id]['rated_capacity_kWh']
-            component_state.charge_speed = self.battery_configs[bat_id]['charge_speed']
-            component_state.discharge_speed = self.battery_configs[bat_id]['discharge_speed']
-            component_state.charge_efficiency = self.battery_configs[bat_id]['charge_efficiency']
+            component_state.soc = bat_config.get('initial_soc', 0.5)
+            component_state.capacity_kwh = bat_config.get('rated_capacity_kWh', 10.0)
+            component_state.charge_speed = bat_config.get('charge_speed', 0.5)
+            component_state.discharge_speed = bat_config.get('discharge_speed', 0.5)
+            component_state.charge_efficiency = bat_config.get('charge_efficiency', 0.95)
 
             self.battery_modules[bat_id] = module
             self.battery_states[bat_id] = component_state
@@ -129,11 +141,12 @@ class DERModule(BaseModule):
                 config=ev_config,
                 system_id=state.system_id,
             )
-            component_state.soc = self.ev_configs[ev_id]['initial_soc']
-            component_state.capacity_kwh = self.ev_configs[ev_id]['rated_capacity_kWh']
-            component_state.charge_speed = self.ev_configs[ev_id]['charge_speed']
-            component_state.discharge_speed = self.ev_configs[ev_id]['discharge_speed']
-            component_state.charge_efficiency = self.ev_configs[ev_id]['charge_efficiency']
+            component_state.soc = ev_config.get('initial_soc', 0.5)
+            component_state.capacity_kwh = ev_config.get('rated_capacity_kWh', 40.0)
+            component_state.charge_speed = ev_config.get('charge_speed', 0.5)
+            component_state.discharge_speed = ev_config.get('discharge_speed', 0.5)
+            component_state.charge_efficiency = ev_config.get('charge_efficiency', 0.95)
+
             self.ev_modules[ev_id] = module
             self.ev_states[ev_id] = component_state
             state.components[ev_id] = component_state
@@ -143,19 +156,15 @@ class DERModule(BaseModule):
         self.logger.info(f"Registered {len(state.components)} components for DER system {state.system_id}")
 
     def initialize(self) -> None:
-        """Initialize all component modules that have been created."""
-
-        # Initialize PV modules
+        """Initialize all component modules."""
         for pv_id, pv_module in self.pv_modules.items():
             pv_module.initialize()
             self.logger.debug(f"Initialized PV module: {pv_id}")
 
-        # Initialize battery modules
         for bat_id, bat_module in self.battery_modules.items():
             bat_module.initialize()
             self.logger.debug(f"Initialized battery module: {bat_id}")
 
-        # Initialize EV modules
         for ev_id, ev_module in self.ev_modules.items():
             ev_module.initialize()
             self.logger.debug(f"Initialized EV module: {ev_id}")
@@ -164,26 +173,15 @@ class DERModule(BaseModule):
         self.logger.info(f"DER system fully initialized: {self.name}")
 
     def calculate_pv_generation(self, state: DERSystemState, disturbance, timestep):
-        """
-        Calculate PV generation for all PV components.
-
-        Args:
-            state: The DER system state containing component states
-            disturbance: Current disturbances (weather, etc.)
-            timestep: Current simulation timestep
-
-        Returns:
-            Total PV generation in Watts
-        """
+        """Calculate PV generation for all PV components."""
         total_generation = 0.0
 
         for pv_id, pv_module in self.pv_modules.items():
-            # Get the PV state from the system state, not from local storage
             pv_state = state.components.get(pv_id)
 
             if pv_state and pv_state.component_type == ComponentType.PV:
                 pv_state = pv_module.step(
-                    state=pv_state,  # Pass the actual state from the system
+                    state=pv_state,
                     disturbance=disturbance,
                     resolution=900,
                     timestep=timestep,
@@ -196,52 +194,97 @@ class DERModule(BaseModule):
 
     def step(self, state: DERSystemState, action: DERSystemAction, disturbance: Disturbance,
              resolution: int, timestep: float) -> Dict[str, Any]:
+        """
+        Step the DER system forward using simplified power flow model.
 
+        Args:
+            state: Current DER system state
+            action: DERSystemAction with:
+                - battery_power: {bat_id: power_kw} (+ charge, - discharge)
+                - ev_charging: {ev_id: power_kw} (automatic charging)
+                - grid_import: net grid power [kW]
+                - curtailment: curtailed PV [kW]
+            disturbance: Current disturbances
+            resolution: Time resolution in seconds
+            timestep: Current timestep
+
+        Returns:
+            Results dictionary with component outcomes
+        """
         results = {
             'pv_results': {},
             'battery_results': {},
             'ev_results': {},
-            'total_grid_import': 0.0,
-            'total_grid_export': 0.0,
-            'total_building_supply': 0.0,
-            'power_flows': {}
+            'total_pv_generation': 0.0,
+            'total_battery_power': 0.0,
+            'total_ev_charging': 0.0,
+            'grid_import': getattr(action, 'grid_import', 0.0),
+            'curtailment': getattr(action, 'curtailment', 0.0),
         }
+
+        # Step 1: Process Battery modules
+        # battery_power: positive = charging, negative = discharging
+        battery_power_dict = getattr(action, 'battery_power', {})
 
         for bat_id, bat_module in self.battery_modules.items():
             bat_state = state.components.get(bat_id)
-            if bat_state and bat_state.component_type == ComponentType.BATTERY:
-                # Calculate net power for this battery from action
-                power_in = action.pv2battery.get(bat_id, 0.0) + action.grid2battery.get(bat_id, 0.0)
-                power_out = action.battery2building.get(bat_id, 0.0)
-                net_power_kw = power_in - power_out
 
-                # Let battery module handle its own dynamics
+            if bat_state and bat_state.component_type == ComponentType.BATTERY:
+                # Get battery power command (positive = charge, negative = discharge)
+                net_power_kw = battery_power_dict.get(bat_id, 0.0)
+
+                # Step the battery module
                 bat_state = bat_module.step(
                     state=bat_state,
-                    action={'net_power_kw': net_power_kw},  # Pass simplified action
+                    action={'net_power_kw': net_power_kw},
                     disturbance=disturbance,
                     timestep=timestep
                 )
-                # print(bat_state.soc)
-                # results['battery_results'][bat_id] = battery_results
 
-        # Step 3: Process EV modules
+                results['battery_results'][bat_id] = {
+                    'power_kw': net_power_kw,
+                    'soc': bat_state.soc
+                }
+                results['total_battery_power'] += net_power_kw
+
+                self.logger.debug(f"Battery {bat_id}: power={net_power_kw:.2f}kW, SOC={bat_state.soc:.1%}")
+
+        # Step 2: Process EV modules
+        # ev_charging: automatic charging power (always positive or zero)
+        ev_charging_dict = getattr(action, 'ev_charging', {})
+
         for ev_id, ev_module in self.ev_modules.items():
             ev_state = state.components.get(ev_id)
-            if ev_state and ev_state.component_type == ComponentType.EV:
-                # Calculate net power for this EV from action
-                power_in = action.pv2ev.get(ev_id, 0.0) + action.grid2ev.get(ev_id, 0.0)
-                power_out = action.ev2building.get(ev_id, 0.0)
-                net_power_kw = power_in - power_out
 
-                # Let EV module handle its own dynamics
+            if ev_state and ev_state.component_type == ComponentType.EV:
+                # Get EV charging power (positive = charging, no V2G in simplified model)
+                charging_power_kw = ev_charging_dict.get(ev_id, 0.0)
+
+                # Step the EV module
                 ev_state = ev_module.step(
                     state=ev_state,
-                    action={'net_power_kw': net_power_kw},  # Pass simplified action
+                    action={'net_power_kw': charging_power_kw},  # Positive = charging
                     disturbance=disturbance,
                     timestep=timestep
                 )
 
+                results['ev_results'][ev_id] = {
+                    'charging_power_kw': charging_power_kw,
+                    'soc': ev_state.soc,
+                    'is_connected': getattr(ev_state, 'is_connected', True)
+                }
+                results['total_ev_charging'] += charging_power_kw
+
+                self.logger.debug(f"EV {ev_id}: charging={charging_power_kw:.2f}kW, SOC={ev_state.soc:.1%}")
+
+        # Log summary
+        self.logger.debug(
+            f"DER Step Summary - "
+            f"Battery: {results['total_battery_power']:.2f}kW, "
+            f"EV Charging: {results['total_ev_charging']:.2f}kW, "
+            f"Grid Import: {results['grid_import']:.2f}kW, "
+            f"Curtailment: {results['curtailment']:.2f}kW"
+        )
 
         return results
 
@@ -257,7 +300,7 @@ class DERModule(BaseModule):
         self.logger.debug(f"DER system reset: {self.name}")
 
     def _parse_component_config(self, plural_key: str, singular_key: str) -> Dict[str, Dict[str, Any]]:
-        """Parse component configuration (same as before)."""
+        """Parse component configuration."""
         configs = {}
 
         if plural_key in self.system_config:
@@ -280,7 +323,6 @@ class DERModule(BaseModule):
 
         return configs
 
-
     def get_state(self) -> Dict[str, Any]:
         """Get current state of all component modules."""
         state = {
@@ -289,7 +331,6 @@ class DERModule(BaseModule):
             'ev_modules': {},
         }
 
-        # Get state from each component module
         for pv_id, pv_module in self.pv_modules.items():
             state['pv_modules'][pv_id] = pv_module.get_state()
 
@@ -303,19 +344,16 @@ class DERModule(BaseModule):
 
     def set_state(self, state: Dict[str, Any]) -> None:
         """Set state of all component modules."""
-        # Set state for PV modules
         if 'pv_modules' in state:
             for pv_id, pv_state in state['pv_modules'].items():
                 if pv_id in self.pv_modules:
                     self.pv_modules[pv_id].set_state(pv_state)
 
-        # Set state for battery modules
         if 'battery_modules' in state:
             for bat_id, bat_state in state['battery_modules'].items():
                 if bat_id in self.battery_modules:
                     self.battery_modules[bat_id].set_state(bat_state)
 
-        # Set state for EV modules
         if 'ev_modules' in state:
             for ev_id, ev_state in state['ev_modules'].items():
                 if ev_id in self.ev_modules:
