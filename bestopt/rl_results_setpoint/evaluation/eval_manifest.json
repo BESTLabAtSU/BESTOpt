@@ -1,0 +1,40 @@
+{
+  "fingerprint": "caaaa9b356464a5d",
+  "settings": {
+    "control_mode": "setpoint",
+    "n_episodes": 30,
+    "randomize": true,
+    "seed": 42,
+    "num_days": 5,
+    "reward_weights": {
+      "comfort_occupied": 1.5,
+      "comfort_unoccupied": 0.3,
+      "hvac_peak": 3.0,
+      "hvac_prepeak": 0.2,
+      "hvac_base": 1.0,
+      "hvac_unoccupied": 2.0,
+      "prepeak_hours": 2.0,
+      "grid": 1.0,
+      "curtail": 1.5,
+      "comfort_deadband": 0.25
+    },
+    "model_mtimes": {
+      "PPO": 1775125830.238119,
+      "SAC": 1775111104.2062602,
+      "TD3": 1775142083.6038134
+    },
+    "version": "v7"
+  },
+  "labels": [
+    "Baseline",
+    "SAC",
+    "PPO",
+    "TD3"
+  ],
+  "n_episodes": {
+    "Baseline": 30,
+    "SAC": 30,
+    "PPO": 30,
+    "TD3": 30
+  }
+}
